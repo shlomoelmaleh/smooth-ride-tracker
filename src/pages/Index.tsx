@@ -1,13 +1,206 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Layout from '@/components/Layout';
+import RideButton from '@/components/RideButton';
+import RideStats from '@/components/RideStats';
+import { useMotionSensors } from '@/hooks/useMotionSensors';
+import { useRideData } from '@/hooks/useRideData';
+import { toast } from '@/components/ui/sonner';
+import { Card, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { motion } from 'framer-motion';
 
 const Index = () => {
+  const navigate = useNavigate();
+  const { 
+    isTracking,
+    currentData,
+    dataPoints,
+    hasAccelerometer,
+    startTracking,
+    stopTracking
+  } = useMotionSensors();
+  
+  const { 
+    currentRide, 
+    startRide, 
+    updateRideData, 
+    endRide, 
+    exportRideData,
+    getRideStats
+  } = useRideData();
+  
+  const [completedRide, setCompletedRide] = useState<any>(null);
+  const intervalRef = useRef<number | null>(null);
+  
+  // Update ride data periodically during tracking
+  useEffect(() => {
+    if (isTracking && currentRide) {
+      updateRideData(dataPoints);
+    }
+  }, [isTracking, dataPoints, currentRide, updateRideData]);
+  
+  const handleStartTracking = () => {
+    // Start the ride in the database
+    startRide();
+    
+    // Start collecting sensor data
+    const intervalId = startTracking();
+    if (intervalId) {
+      intervalRef.current = intervalId;
+      toast.success('Ride tracking started');
+    } else {
+      toast.error('Failed to start tracking');
+    }
+  };
+  
+  const handleStopTracking = () => {
+    if (intervalRef.current !== null) {
+      // Stop collecting sensor data
+      const finalData = stopTracking(intervalRef.current);
+      intervalRef.current = null;
+      
+      // End the ride and get the completed ride data
+      const completed = endRide(finalData);
+      if (completed) {
+        setCompletedRide(completed);
+        toast.success('Ride completed and saved');
+      }
+    }
+  };
+  
+  const handleExport = () => {
+    if (completedRide) {
+      exportRideData(completedRide);
+    }
+  };
+  
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
+    <Layout>
+      <div className="max-w-md mx-auto">
+        <div className="text-center mb-8 animate-fade-in">
+          <div className="glass-panel mx-auto mb-6 p-6">
+            <motion.h1 
+              className="text-3xl font-semibold text-balance"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              SmartRide
+            </motion.h1>
+            <motion.p 
+              className="text-muted-foreground mt-2"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+            >
+              Track ride quality during transit
+            </motion.p>
+          </div>
+          
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+          >
+            <RideButton
+              isTracking={isTracking}
+              onStart={handleStartTracking}
+              onStop={handleStopTracking}
+              hasRequiredSensors={hasAccelerometer}
+            />
+          </motion.div>
+          
+          {isTracking && currentData && (
+            <motion.div 
+              className="mt-6 animate-fade-in"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-sm mb-2">
+                    Currently tracking <span className="font-semibold">{dataPoints.length}</span> data points
+                  </p>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>X: {currentData.accelerometer.x.toFixed(2)}</span>
+                    <span>Y: {currentData.accelerometer.y.toFixed(2)}</span>
+                    <span>Z: {currentData.accelerometer.z.toFixed(2)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </div>
+        
+        {completedRide && !isTracking && (
+          <motion.div 
+            className="mt-8"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <h2 className="text-xl font-medium mb-4 text-center">Last Ride Summary</h2>
+            <RideStats 
+              ride={completedRide} 
+              stats={getRideStats(completedRide)}
+              onExport={handleExport}
+            />
+            
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => navigate('/history')}
+                className="text-primary underline text-sm"
+              >
+                View all rides
+              </button>
+            </div>
+          </motion.div>
+        )}
+        
+        {!isTracking && !completedRide && (
+          <motion.div 
+            className="flex flex-col items-center justify-center text-center px-4 py-8 glass-panel"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+          >
+            <h2 className="text-lg font-medium mb-2">How it works</h2>
+            <ol className="text-sm text-muted-foreground mt-2 space-y-3 text-left">
+              <li className="flex items-start">
+                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
+                  <span className="text-xs font-medium text-primary">1</span>
+                </div>
+                <p>Press START when you begin your transit journey</p>
+              </li>
+              <li className="flex items-start">
+                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
+                  <span className="text-xs font-medium text-primary">2</span>
+                </div>
+                <p>Keep your phone in a stable position (pocket or bag)</p>
+              </li>
+              <li className="flex items-start">
+                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
+                  <span className="text-xs font-medium text-primary">3</span>
+                </div>
+                <p>Press STOP when you complete your journey</p>
+              </li>
+              <li className="flex items-start">
+                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
+                  <span className="text-xs font-medium text-primary">4</span>
+                </div>
+                <p>Review your ride quality stats and insights</p>
+              </li>
+            </ol>
+            <p className="text-xs text-muted-foreground mt-4">
+              All data remains on your device unless exported
+            </p>
+          </motion.div>
+        )}
       </div>
-    </div>
+    </Layout>
   );
 };
 
