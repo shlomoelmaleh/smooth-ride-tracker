@@ -41,82 +41,92 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
 
   return (
     <div className="space-y-8 w-full mb-8">
-      <Card className="overflow-hidden">
+      <Card>
         <CardHeader>
           <CardTitle>Accelerometer Data</CardTitle>
           <CardDescription>X, Y, Z acceleration values over time</CardDescription>
         </CardHeader>
-        <CardContent className="h-[350px] px-2 pb-6">
-          <ChartContainer
-            config={{
-              x: { theme: { light: '#ef4444', dark: '#ef4444' } },
-              y: { theme: { light: '#22c55e', dark: '#22c55e' } },
-              z: { theme: { light: '#3b82f6', dark: '#3b82f6' } },
-            }}
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart 
-                data={sampledData} 
-                margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="index" 
-                  label={{ value: 'Time', position: 'insideBottom', offset: -10 }} 
-                  tick={false}
-                />
-                <YAxis 
-                  label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 10 }} 
-                  width={40}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Legend verticalAlign="top" height={36} />
-                <Line type="monotone" dataKey="x" name="X-axis" stroke="var(--color-x)" dot={false} />
-                <Line type="monotone" dataKey="y" name="Y-axis" stroke="var(--color-y)" dot={false} />
-                <Line type="monotone" dataKey="z" name="Z-axis" stroke="var(--color-z)" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        </CardContent>
-      </Card>
-
-      {hasGyroscopeData && (
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Gyroscope Data</CardTitle>
-            <CardDescription>Orientation values over time</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[350px] px-2 pb-6">
+        <CardContent className="p-0">
+          <div className="h-[400px] px-4 py-6">
             <ChartContainer
               config={{
-                alpha: { theme: { light: '#8b5cf6', dark: '#8b5cf6' } },
-                beta: { theme: { light: '#ec4899', dark: '#ec4899' } },
-                gamma: { theme: { light: '#f59e0b', dark: '#f59e0b' } },
+                x: { theme: { light: '#ef4444', dark: '#ef4444' } },
+                y: { theme: { light: '#22c55e', dark: '#22c55e' } },
+                z: { theme: { light: '#3b82f6', dark: '#3b82f6' } },
               }}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart 
-                  data={gyroscopeData} 
-                  margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
+                  data={sampledData} 
+                  margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
                     dataKey="index" 
-                    label={{ value: 'Time', position: 'insideBottom', offset: -10 }} 
+                    label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }} 
                     tick={false}
+                    axisLine={{ strokeWidth: 1.5 }}
                   />
                   <YAxis 
-                    label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: 10 }} 
-                    width={40}
+                    label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 15 }} 
+                    width={60}
+                    axisLine={{ strokeWidth: 1.5 }}
+                    tickMargin={10}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Legend verticalAlign="top" height={36} />
-                  <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
-                  <Line type="monotone" dataKey="beta" name="Beta" stroke="var(--color-beta)" dot={false} />
-                  <Line type="monotone" dataKey="gamma" name="Gamma" stroke="var(--color-gamma)" dot={false} />
+                  <Legend verticalAlign="top" height={40} />
+                  <Line type="monotone" dataKey="x" name="X-axis" stroke="var(--color-x)" dot={false} />
+                  <Line type="monotone" dataKey="y" name="Y-axis" stroke="var(--color-y)" dot={false} />
+                  <Line type="monotone" dataKey="z" name="Z-axis" stroke="var(--color-z)" dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {hasGyroscopeData && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Gyroscope Data</CardTitle>
+            <CardDescription>Orientation values over time</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="h-[400px] px-4 py-6">
+              <ChartContainer
+                config={{
+                  alpha: { theme: { light: '#8b5cf6', dark: '#8b5cf6' } },
+                  beta: { theme: { light: '#ec4899', dark: '#ec4899' } },
+                  gamma: { theme: { light: '#f59e0b', dark: '#f59e0b' } },
+                }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart 
+                    data={gyroscopeData} 
+                    margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="index" 
+                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }} 
+                      tick={false}
+                      axisLine={{ strokeWidth: 1.5 }}
+                    />
+                    <YAxis 
+                      label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: 15 }} 
+                      width={60}
+                      axisLine={{ strokeWidth: 1.5 }}
+                      tickMargin={10}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Legend verticalAlign="top" height={40} />
+                    <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
+                    <Line type="monotone" dataKey="beta" name="Beta" stroke="var(--color-beta)" dot={false} />
+                    <Line type="monotone" dataKey="gamma" name="Gamma" stroke="var(--color-gamma)" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </div>
           </CardContent>
         </Card>
       )}
