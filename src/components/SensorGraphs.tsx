@@ -54,26 +54,28 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
               z: { theme: { light: '#3b82f6', dark: '#3b82f6' } },
             }}
           >
-            <LineChart 
-              data={sampledData} 
-              margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="index" 
-                label={{ value: 'Time', position: 'insideBottomRight', offset: -5 }} 
-                tick={false}
-              />
-              <YAxis 
-                label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: -5 }} 
-                width={30}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Legend />
-              <Line type="monotone" dataKey="x" name="X-axis" stroke="var(--color-x)" dot={false} />
-              <Line type="monotone" dataKey="y" name="Y-axis" stroke="var(--color-y)" dot={false} />
-              <Line type="monotone" dataKey="z" name="Z-axis" stroke="var(--color-z)" dot={false} />
-            </LineChart>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart 
+                data={sampledData} 
+                margin={{ top: 10, right: 10, left: 10, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="index" 
+                  label={{ value: 'Time', position: 'insideBottom', offset: 0 }} 
+                  tick={false}
+                />
+                <YAxis 
+                  label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 0 }} 
+                  width={30}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Legend />
+                <Line type="monotone" dataKey="x" name="X-axis" stroke="var(--color-x)" dot={false} />
+                <Line type="monotone" dataKey="y" name="Y-axis" stroke="var(--color-y)" dot={false} />
+                <Line type="monotone" dataKey="z" name="Z-axis" stroke="var(--color-z)" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
           </ChartContainer>
         </CardContent>
       </Card>
@@ -92,26 +94,28 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                 gamma: { theme: { light: '#f59e0b', dark: '#f59e0b' } },
               }}
             >
-              <LineChart 
-                data={gyroscopeData} 
-                margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="index" 
-                  label={{ value: 'Time', position: 'insideBottomRight', offset: -5 }} 
-                  tick={false}
-                />
-                <YAxis 
-                  label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: -5 }} 
-                  width={30}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Legend />
-                <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
-                <Line type="monotone" dataKey="beta" name="Beta" stroke="var(--color-beta)" dot={false} />
-                <Line type="monotone" dataKey="gamma" name="Gamma" stroke="var(--color-gamma)" dot={false} />
-              </LineChart>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart 
+                  data={gyroscopeData} 
+                  margin={{ top: 10, right: 10, left: 10, bottom: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="index" 
+                    label={{ value: 'Time', position: 'insideBottom', offset: 0 }} 
+                    tick={false}
+                  />
+                  <YAxis 
+                    label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: 0 }} 
+                    width={30}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Legend />
+                  <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
+                  <Line type="monotone" dataKey="beta" name="Beta" stroke="var(--color-beta)" dot={false} />
+                  <Line type="monotone" dataKey="gamma" name="Gamma" stroke="var(--color-gamma)" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
             </ChartContainer>
           </CardContent>
         </Card>
