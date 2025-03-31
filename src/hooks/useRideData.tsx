@@ -1,7 +1,6 @@
-
 import { useState, useEffect, useMemo } from 'react';
 import { RideSession, RideStats, RideDataPoint } from '@/types';
-import { toast } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 
 // Calculate the smoothness score from accelerometer data
 const calculateSmoothnessScore = (dataPoints: RideDataPoint[]): number => {

@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
@@ -6,7 +5,7 @@ import RideButton from '@/components/RideButton';
 import RideStats from '@/components/RideStats';
 import { useMotionSensors } from '@/hooks/useMotionSensors';
 import { useRideData } from '@/hooks/useRideData';
-import { toast } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { motion } from 'framer-motion';
@@ -34,7 +33,6 @@ const Index = () => {
   const [completedRide, setCompletedRide] = useState<any>(null);
   const intervalRef = useRef<number | null>(null);
   
-  // Update ride data periodically during tracking
   useEffect(() => {
     if (isTracking && currentRide) {
       updateRideData(dataPoints);
@@ -42,13 +40,11 @@ const Index = () => {
   }, [isTracking, dataPoints, currentRide, updateRideData]);
   
   const handleStartTracking = () => {
-    // Start the ride in the database
     startRide();
     
-    // Start collecting sensor data
     const intervalId = startTracking();
     if (intervalId) {
-      intervalRef.current = intervalId;
+      intervalRef.current = intervalId as unknown as number;
       toast.success('Ride tracking started');
     } else {
       toast.error('Failed to start tracking');
@@ -57,11 +53,9 @@ const Index = () => {
   
   const handleStopTracking = () => {
     if (intervalRef.current !== null) {
-      // Stop collecting sensor data
       const finalData = stopTracking(intervalRef.current);
       intervalRef.current = null;
       
-      // End the ride and get the completed ride data
       const completed = endRide(finalData);
       if (completed) {
         setCompletedRide(completed);

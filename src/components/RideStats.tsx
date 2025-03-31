@@ -1,227 +1,115 @@
-
-import { useState } from 'react';
-import { RideSession, RideStats } from '@/types';
+import React from 'react';
+import { Download, TrendingUp, MapPin, Clock } from 'lucide-react';
+import type { RideSession, RideStats as RideStatsType } from '@/types';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowUp, ArrowDown, Clock, MapPin } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Progress } from '@/components/ui/progress';
 
 interface RideStatsProps {
   ride: RideSession;
-  stats: RideStats;
-  onExport?: () => void;
+  stats: RideStatsType;
+  onExport: () => void;
 }
 
 const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
-  const [activeTab, setActiveTab] = useState('overview');
-  
-  const formatDuration = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}m ${remainingSeconds}s`;
-  };
-  
-  const formatDistance = (meters: number): string => {
-    if (meters < 1000) {
-      return `${meters.toFixed(0)}m`;
+  const formatDuration = (durationInSeconds: number): string => {
+    const hours = Math.floor(durationInSeconds / 3600);
+    const minutes = Math.floor((durationInSeconds % 3600) / 60);
+    const seconds = Math.floor(durationInSeconds % 60);
+    
+    let formatted = '';
+    if (hours > 0) {
+      formatted += `${hours}h `;
     }
-    return `${(meters / 1000).toFixed(2)}km`;
+    if (minutes > 0 || hours > 0) {
+      formatted += `${minutes}m `;
+    }
+    formatted += `${seconds}s`;
+    
+    return formatted;
   };
   
-  const formatDate = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleString();
+  const formatDistance = (distanceInMeters: number): string => {
+    const distanceInKilometers = distanceInMeters / 1000;
+    return `${distanceInKilometers.toFixed(2)} km`;
   };
-  
-  const getSmoothnessBadge = (score: number) => {
-    if (score >= 85) return { label: 'Very Smooth', color: 'bg-green-100 text-green-800' };
-    if (score >= 70) return { label: 'Smooth', color: 'bg-emerald-100 text-emerald-800' };
-    if (score >= 50) return { label: 'Average', color: 'bg-yellow-100 text-yellow-800' };
-    if (score >= 30) return { label: 'Bumpy', color: 'bg-orange-100 text-orange-800' };
-    return { label: 'Very Bumpy', color: 'bg-red-100 text-red-800' };
-  };
-  
-  const badge = getSmoothnessBadge(ride.smoothnessScore || 0);
-  
+
   return (
-    <Card className="w-full max-w-xl mx-auto overflow-hidden animate-scale-in">
-      <CardHeader className="bg-secondary/50 pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-xl">Ride Summary</CardTitle>
-            <CardDescription>
-              {formatDate(ride.startTime)}
-            </CardDescription>
-          </div>
-          <div className={cn("px-3 py-1 rounded-full text-xs font-medium", badge.color)}>
-            {badge.label}
-          </div>
-        </div>
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Ride Statistics</CardTitle>
+        <CardDescription>Summary of your recent ride</CardDescription>
       </CardHeader>
-      
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="px-6 pt-3">
-          <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="details">Details</TabsTrigger>
-          </TabsList>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-2">
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="h-4 w-4" />
+            <h2 className="text-sm font-semibold">Smoothness Score</h2>
+          </div>
+          <Progress value={ride.smoothnessScore || 0} />
+          <p className="text-sm text-muted-foreground">
+            {ride.smoothnessScore?.toFixed(0) || 0}%
+          </p>
         </div>
-        
-        <TabsContent value="overview" className="pt-4 animate-fade-in">
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <StatCard 
-                title="Smoothness" 
-                value={`${Math.round(ride.smoothnessScore || 0)}`}
-                suffix="/100"
-                icon={<div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center"
-                    style={{
-                      background: `conic-gradient(hsl(var(--primary)) ${(ride.smoothnessScore || 0)}%, transparent 0)`
-                    }}
-                  >
-                    <div className="w-6 h-6 rounded-full bg-card flex items-center justify-center text-xs font-medium">
-                      {Math.round(ride.smoothnessScore || 0)}
-                    </div>
-                  </div>
-                </div>}
-              />
-              
-              <StatCard 
-                title="Duration" 
-                value={formatDuration(stats.duration)}
-                icon={<div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-                  <Clock size={20} className="text-blue-600" />
-                </div>}
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <StatCard 
-                title="Distance" 
-                value={formatDistance(stats.distance)}
-                icon={<div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center">
-                  <MapPin size={20} className="text-violet-600" />
-                </div>}
-              />
-              
-              <StatCard 
-                title="Events" 
-                value={(stats.suddenStops + stats.suddenAccelerations).toString()}
-                icon={<div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
-                  <div className="flex flex-col">
-                    <ArrowUp size={12} className="text-red-500" />
-                    <ArrowDown size={12} className="text-orange-500 mt-1" />
-                  </div>
-                </div>}
-              />
-            </div>
-            
-            {onExport && (
-              <div className="mt-6 flex justify-center">
-                <Button 
-                  variant="outline" 
-                  onClick={onExport} 
-                  className="text-sm"
-                >
-                  Export Ride Data
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </TabsContent>
-        
-        <TabsContent value="details" className="animate-fade-in">
-          <CardContent>
-            <div className="space-y-4">
-              <DetailRow 
-                label="Sudden Stops" 
-                value={stats.suddenStops.toString()} 
-                icon={<ArrowDown size={16} className="text-orange-500" />} 
-              />
-              
-              <DetailRow 
-                label="Sudden Accelerations" 
-                value={stats.suddenAccelerations.toString()} 
-                icon={<ArrowUp size={16} className="text-red-500" />} 
-              />
-              
-              <DetailRow 
-                label="Max Acceleration" 
-                value={`${stats.maxAcceleration.toFixed(2)} m/s²`} 
-                icon={<span className="text-xs font-semibold">MAX</span>} 
-              />
-              
-              <DetailRow 
-                label="Avg Acceleration" 
-                value={`${stats.averageAcceleration.toFixed(2)} m/s²`} 
-                icon={<span className="text-xs font-semibold">AVG</span>} 
-              />
-              
-              <DetailRow 
-                label="Vibration Level" 
-                value={`${stats.vibrationLevel.toFixed(2)}`} 
-                icon={<span className="text-xs font-semibold">VIB</span>} 
-              />
-            </div>
-            
-            {onExport && (
-              <div className="mt-6 flex justify-center">
-                <Button 
-                  variant="outline" 
-                  onClick={onExport} 
-                  className="text-sm"
-                >
-                  Export Ride Data
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </TabsContent>
-      </Tabs>
+        <div className="grid gap-2">
+          <div className="flex items-center space-x-2">
+            <MapPin className="h-4 w-4" />
+            <h2 className="text-sm font-semibold">Distance</h2>
+          </div>
+          <p className="text-sm">
+            {formatDistance(ride.distance || 0)}
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <div className="flex items-center space-x-2">
+            <Clock className="h-4 w-4" />
+            <h2 className="text-sm font-semibold">Duration</h2>
+          </div>
+          <p className="text-sm">
+            {formatDuration(ride.duration || 0)}
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <h2 className="text-sm font-semibold">Average Acceleration</h2>
+          <p className="text-sm">
+            {stats.averageAcceleration.toFixed(2)} m/s²
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <h2 className="text-sm font-semibold">Max Acceleration</h2>
+          <p className="text-sm">
+            {stats.maxAcceleration.toFixed(2)} m/s²
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <h2 className="text-sm font-semibold">Sudden Stops</h2>
+          <p className="text-sm">
+            {stats.suddenStops}
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <h2 className="text-sm font-semibold">Sudden Accelerations</h2>
+          <p className="text-sm">
+            {stats.suddenAccelerations}
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <h2 className="text-sm font-semibold">Vibration Level</h2>
+          <p className="text-sm">
+            {stats.vibrationLevel.toFixed(2)}
+          </p>
+        </div>
+      </CardContent>
+      <CardFooter className="justify-between items-center">
+        <p className="text-sm text-muted-foreground">
+          Recorded on {new Date(ride.startTime).toLocaleDateString()}
+        </p>
+        <Button onClick={onExport}>
+          <Download className="h-4 w-4 mr-2" />
+          Export Data
+        </Button>
+      </CardFooter>
     </Card>
-  );
-};
-
-interface StatCardProps {
-  title: string;
-  value: string;
-  suffix?: string;
-  icon: React.ReactNode;
-}
-
-const StatCard: React.FC<StatCardProps> = ({ title, value, suffix = '', icon }) => {
-  return (
-    <div className="flex items-center p-3 rounded-lg bg-secondary/30">
-      {icon}
-      <div className="ml-3">
-        <div className="text-xs text-muted-foreground font-medium">{title}</div>
-        <div className="text-lg font-semibold">
-          {value}<span className="text-xs text-muted-foreground">{suffix}</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-interface DetailRowProps {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-}
-
-const DetailRow: React.FC<DetailRowProps> = ({ label, value, icon }) => {
-  return (
-    <div className="flex justify-between items-center border-b border-border pb-2">
-      <div className="flex items-center">
-        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center mr-3">
-          {icon}
-        </div>
-        <span className="text-sm">{label}</span>
-      </div>
-      <span className="font-medium">{value}</span>
-    </div>
   );
 };
 

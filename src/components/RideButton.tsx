@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { Play, Stop, Smartphone } from 'lucide-react';
+import { Play, Square, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
 
@@ -75,7 +75,7 @@ const RideButton: React.FC<RideButtonProps> = ({
         <div className="relative z-10 flex flex-col items-center justify-center">
           {isTracking ? (
             <>
-              <Stop size={30} strokeWidth={2} />
+              <Square size={30} strokeWidth={2} />
               <span className="text-xs font-medium mt-1">STOP</span>
             </>
           ) : (
