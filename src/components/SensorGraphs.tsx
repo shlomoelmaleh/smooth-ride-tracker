@@ -40,13 +40,13 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
   }).filter((_, i) => i % sampleRate === 0) : [];
 
   return (
-    <div className="space-y-6 w-full">
-      <Card>
+    <div className="space-y-8 w-full mb-8">
+      <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>Accelerometer Data</CardTitle>
           <CardDescription>X, Y, Z acceleration values over time</CardDescription>
         </CardHeader>
-        <CardContent className="h-[300px]">
+        <CardContent className="h-[350px] pt-4">
           <ChartContainer
             config={{
               x: { theme: { light: '#ef4444', dark: '#ef4444' } },
@@ -54,14 +54,20 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
               z: { theme: { light: '#3b82f6', dark: '#3b82f6' } },
             }}
           >
-            <LineChart data={sampledData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <LineChart 
+              data={sampledData} 
+              margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+            >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
                 dataKey="index" 
-                label={{ value: 'Time', position: 'insideBottomRight', offset: -10 }} 
+                label={{ value: 'Time', position: 'insideBottomRight', offset: -5 }} 
                 tick={false}
               />
-              <YAxis label={{ value: 'm/s²', angle: -90, position: 'insideLeft' }} />
+              <YAxis 
+                label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: -5 }} 
+                width={30}
+              />
               <ChartTooltip content={<ChartTooltipContent />} />
               <Legend />
               <Line type="monotone" dataKey="x" name="X-axis" stroke="var(--color-x)" dot={false} />
@@ -73,12 +79,12 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
       </Card>
 
       {hasGyroscopeData && (
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Gyroscope Data</CardTitle>
             <CardDescription>Orientation values over time</CardDescription>
           </CardHeader>
-          <CardContent className="h-[300px]">
+          <CardContent className="h-[350px] pt-4">
             <ChartContainer
               config={{
                 alpha: { theme: { light: '#8b5cf6', dark: '#8b5cf6' } },
@@ -86,14 +92,20 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                 gamma: { theme: { light: '#f59e0b', dark: '#f59e0b' } },
               }}
             >
-              <LineChart data={gyroscopeData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <LineChart 
+                data={gyroscopeData} 
+                margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
                   dataKey="index" 
-                  label={{ value: 'Time', position: 'insideBottomRight', offset: -10 }} 
+                  label={{ value: 'Time', position: 'insideBottomRight', offset: -5 }} 
                   tick={false}
                 />
-                <YAxis label={{ value: 'degrees', angle: -90, position: 'insideLeft' }} />
+                <YAxis 
+                  label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: -5 }} 
+                  width={30}
+                />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Legend />
                 <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
