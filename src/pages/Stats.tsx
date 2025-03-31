@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
@@ -7,10 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
+import RideStats from '@/components/RideStats';
 
 const Stats = () => {
   const navigate = useNavigate();
-  const { rides, getRideStats } = useRideData();
+  const { rides, getRideStats, exportRideData } = useRideData();
   const [aggrStats, setAggrStats] = useState({
     totalRides: 0,
     totalDistance: 0,
@@ -21,9 +21,11 @@ const Stats = () => {
     rideTimeline: [] as { date: string, smoothness: number, events: number }[]
   });
   
+  const lastRide = rides.length > 0 ? rides[rides.length - 1] : null;
+  const lastRideStats = lastRide ? getRideStats(lastRide) : null;
+  
   useEffect(() => {
     if (rides.length > 0) {
-      // Calculate aggregated statistics
       const totalRides = rides.length;
       let totalDistance = 0;
       let totalDuration = 0;
@@ -48,7 +50,6 @@ const Stats = () => {
         totalSmoothness += (ride.smoothnessScore || 0);
         totalSuddenEvents += (stats.suddenStops + stats.suddenAccelerations);
         
-        // Group by smoothness category
         const score = ride.smoothnessScore || 0;
         if (score >= 85) smoothnessGroups['Very Smooth']++;
         else if (score >= 70) smoothnessGroups['Smooth']++;
@@ -56,7 +57,6 @@ const Stats = () => {
         else if (score >= 30) smoothnessGroups['Bumpy']++;
         else smoothnessGroups['Very Bumpy']++;
         
-        // Group by date for timeline
         const date = new Date(ride.startTime).toLocaleDateString();
         if (!timelineData[date]) {
           timelineData[date] = {
@@ -71,7 +71,6 @@ const Stats = () => {
         timelineData[date].count++;
       });
       
-      // Convert timeline data to array and calculate averages
       const timeline = Object.entries(timelineData).map(([date, data]) => ({
         date,
         smoothness: Math.round(data.smoothness / data.count),
@@ -162,6 +161,21 @@ const Stats = () => {
             Insights from {aggrStats.totalRides} recorded rides
           </p>
         </motion.div>
+        
+        {lastRide && lastRideStats && (
+          <motion.div 
+            className="mb-8"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+          >
+            <RideStats 
+              ride={lastRide} 
+              stats={lastRideStats} 
+              onExport={() => exportRideData(lastRide)} 
+            />
+          </motion.div>
+        )}
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <motion.div 

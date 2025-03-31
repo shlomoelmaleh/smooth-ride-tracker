@@ -1,9 +1,10 @@
-import React from 'react';
-import { Download, TrendingUp, MapPin, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, TrendingUp, MapPin, Clock, BarChart2 } from 'lucide-react';
 import type { RideSession, RideStats as RideStatsType } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import SensorGraphs from './SensorGraphs';
 
 interface RideStatsProps {
   ride: RideSession;
@@ -12,6 +13,8 @@ interface RideStatsProps {
 }
 
 const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
+  const [showGraphs, setShowGraphs] = useState(false);
+  
   const formatDuration = (durationInSeconds: number): string => {
     const hours = Math.floor(durationInSeconds / 3600);
     const minutes = Math.floor((durationInSeconds % 3600) / 60);
@@ -35,81 +38,93 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Ride Statistics</CardTitle>
-        <CardDescription>Summary of your recent ride</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        <div className="grid gap-2">
-          <div className="flex items-center space-x-2">
-            <TrendingUp className="h-4 w-4" />
-            <h2 className="text-sm font-semibold">Smoothness Score</h2>
+    <div className="space-y-6">
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Ride Statistics</CardTitle>
+          <CardDescription>Summary of your recent ride</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-2">
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-4 w-4" />
+              <h2 className="text-sm font-semibold">Smoothness Score</h2>
+            </div>
+            <Progress value={ride.smoothnessScore || 0} />
+            <p className="text-sm text-muted-foreground">
+              {ride.smoothnessScore?.toFixed(0) || 0}%
+            </p>
           </div>
-          <Progress value={ride.smoothnessScore || 0} />
+          <div className="grid gap-2">
+            <div className="flex items-center space-x-2">
+              <MapPin className="h-4 w-4" />
+              <h2 className="text-sm font-semibold">Distance</h2>
+            </div>
+            <p className="text-sm">
+              {formatDistance(ride.distance || 0)}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <div className="flex items-center space-x-2">
+              <Clock className="h-4 w-4" />
+              <h2 className="text-sm font-semibold">Duration</h2>
+            </div>
+            <p className="text-sm">
+              {formatDuration(ride.duration || 0)}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Average Acceleration</h2>
+            <p className="text-sm">
+              {stats.averageAcceleration.toFixed(2)} m/s²
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Max Acceleration</h2>
+            <p className="text-sm">
+              {stats.maxAcceleration.toFixed(2)} m/s²
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Sudden Stops</h2>
+            <p className="text-sm">
+              {stats.suddenStops}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Sudden Accelerations</h2>
+            <p className="text-sm">
+              {stats.suddenAccelerations}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Vibration Level</h2>
+            <p className="text-sm">
+              {stats.vibrationLevel.toFixed(2)}
+            </p>
+          </div>
+        </CardContent>
+        <CardFooter className="justify-between items-center">
           <p className="text-sm text-muted-foreground">
-            {ride.smoothnessScore?.toFixed(0) || 0}%
+            Recorded on {new Date(ride.startTime).toLocaleDateString()}
           </p>
-        </div>
-        <div className="grid gap-2">
-          <div className="flex items-center space-x-2">
-            <MapPin className="h-4 w-4" />
-            <h2 className="text-sm font-semibold">Distance</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowGraphs(!showGraphs)}>
+              <BarChart2 className="h-4 w-4 mr-2" />
+              {showGraphs ? 'Hide Graphs' : 'Show Graphs'}
+            </Button>
+            <Button onClick={onExport}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Data
+            </Button>
           </div>
-          <p className="text-sm">
-            {formatDistance(ride.distance || 0)}
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <div className="flex items-center space-x-2">
-            <Clock className="h-4 w-4" />
-            <h2 className="text-sm font-semibold">Duration</h2>
-          </div>
-          <p className="text-sm">
-            {formatDuration(ride.duration || 0)}
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <h2 className="text-sm font-semibold">Average Acceleration</h2>
-          <p className="text-sm">
-            {stats.averageAcceleration.toFixed(2)} m/s²
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <h2 className="text-sm font-semibold">Max Acceleration</h2>
-          <p className="text-sm">
-            {stats.maxAcceleration.toFixed(2)} m/s²
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <h2 className="text-sm font-semibold">Sudden Stops</h2>
-          <p className="text-sm">
-            {stats.suddenStops}
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <h2 className="text-sm font-semibold">Sudden Accelerations</h2>
-          <p className="text-sm">
-            {stats.suddenAccelerations}
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <h2 className="text-sm font-semibold">Vibration Level</h2>
-          <p className="text-sm">
-            {stats.vibrationLevel.toFixed(2)}
-          </p>
-        </div>
-      </CardContent>
-      <CardFooter className="justify-between items-center">
-        <p className="text-sm text-muted-foreground">
-          Recorded on {new Date(ride.startTime).toLocaleDateString()}
-        </p>
-        <Button onClick={onExport}>
-          <Download className="h-4 w-4 mr-2" />
-          Export Data
-        </Button>
-      </CardFooter>
-    </Card>
+        </CardFooter>
+      </Card>
+      
+      {showGraphs && ride.dataPoints.length > 0 && (
+        <SensorGraphs dataPoints={ride.dataPoints} />
+      )}
+    </div>
   );
 };
 
