@@ -46,7 +46,7 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
           <CardTitle>Accelerometer Data</CardTitle>
           <CardDescription>X, Y, Z acceleration values over time</CardDescription>
         </CardHeader>
-        <CardContent className="h-[350px] pt-4">
+        <CardContent className="h-[350px] px-2 pb-6">
           <ChartContainer
             config={{
               x: { theme: { light: '#ef4444', dark: '#ef4444' } },
@@ -57,20 +57,20 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart 
                 data={sampledData} 
-                margin={{ top: 10, right: 10, left: 10, bottom: 10 }}
+                margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
                   dataKey="index" 
-                  label={{ value: 'Time', position: 'insideBottom', offset: 0 }} 
+                  label={{ value: 'Time', position: 'insideBottom', offset: -10 }} 
                   tick={false}
                 />
                 <YAxis 
-                  label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 0 }} 
-                  width={30}
+                  label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 10 }} 
+                  width={40}
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Legend />
+                <Legend verticalAlign="top" height={36} />
                 <Line type="monotone" dataKey="x" name="X-axis" stroke="var(--color-x)" dot={false} />
                 <Line type="monotone" dataKey="y" name="Y-axis" stroke="var(--color-y)" dot={false} />
                 <Line type="monotone" dataKey="z" name="Z-axis" stroke="var(--color-z)" dot={false} />
@@ -86,7 +86,7 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
             <CardTitle>Gyroscope Data</CardTitle>
             <CardDescription>Orientation values over time</CardDescription>
           </CardHeader>
-          <CardContent className="h-[350px] pt-4">
+          <CardContent className="h-[350px] px-2 pb-6">
             <ChartContainer
               config={{
                 alpha: { theme: { light: '#8b5cf6', dark: '#8b5cf6' } },
@@ -97,20 +97,20 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart 
                   data={gyroscopeData} 
-                  margin={{ top: 10, right: 10, left: 10, bottom: 10 }}
+                  margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
                     dataKey="index" 
-                    label={{ value: 'Time', position: 'insideBottom', offset: 0 }} 
+                    label={{ value: 'Time', position: 'insideBottom', offset: -10 }} 
                     tick={false}
                   />
                   <YAxis 
-                    label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: 0 }} 
-                    width={30}
+                    label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: 10 }} 
+                    width={40}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Legend />
+                  <Legend verticalAlign="top" height={36} />
                   <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
                   <Line type="monotone" dataKey="beta" name="Beta" stroke="var(--color-beta)" dot={false} />
                   <Line type="monotone" dataKey="gamma" name="Gamma" stroke="var(--color-gamma)" dot={false} />
