@@ -175,20 +175,22 @@ export const useMotionSensors = () => {
           timestamp: Date.now()
         };
 
-        if (currentData) {
-          setCurrentData(prev => prev ? {
-            ...prev,
-            location: locationData,
-          } : null);
+        // if (currentData) check removed
 
-          const lastIndex = dataPointsRef.current.length - 1;
-          if (lastIndex >= 0) {
-            dataPointsRef.current[lastIndex] = {
-              ...dataPointsRef.current[lastIndex],
-              location: locationData,
-            };
-          }
+        setCurrentData(prev => prev ? {
+          ...prev,
+          location: locationData,
+        } : null);
+
+        const lastIndex = dataPointsRef.current.length - 1;
+        if (lastIndex >= 0) {
+          dataPointsRef.current[lastIndex] = {
+            ...dataPointsRef.current[lastIndex],
+            location: locationData,
+          };
         }
+        // } end check
+
       },
       (error) => {
         console.error('Geolocation error:', error);
@@ -201,7 +203,7 @@ export const useMotionSensors = () => {
         timeout: 5000
       }
     );
-  }, [hasGeolocation, currentData]);
+  }, [hasGeolocation]);
 
   const startTracking = useCallback(async () => {
     // Request permissions first
