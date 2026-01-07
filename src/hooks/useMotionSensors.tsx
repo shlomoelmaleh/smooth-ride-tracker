@@ -91,6 +91,8 @@ export const useMotionSensors = () => {
     }
   };
 
+  const lastKnownLocationRef = useRef<LocationData | null>(null);
+
   const handleAccelerometerData = useCallback((event: DeviceMotionEvent) => {
     if (!event.accelerationIncludingGravity) return;
 
@@ -103,8 +105,8 @@ export const useMotionSensors = () => {
 
     const newDataPoint: RideDataPoint = {
       accelerometer: accelerometerData,
-      gyroscope: null,
-      location: null,
+      gyroscope: null, // Will be updated if gyro event fires
+      location: lastKnownLocationRef.current, // Use cached location
       timestamp: Date.now()
     };
 
@@ -124,21 +126,21 @@ export const useMotionSensors = () => {
       timestamp: Date.now()
     };
 
-    if (currentData) {
-      setCurrentData(prev => prev ? {
-        ...prev,
-        gyroscope: gyroscopeData,
-      } : null);
+    // Update state without stale check
+    setCurrentData(prev => prev ? {
+      ...prev,
+      gyroscope: gyroscopeData,
+    } : null);
 
-      if (dataPointsRef.current.length > 0) {
-        const lastIndex = dataPointsRef.current.length - 1;
-        dataPointsRef.current[lastIndex] = {
-          ...dataPointsRef.current[lastIndex],
-          gyroscope: gyroscopeData,
-        };
-      }
+    // Update ref directly
+    if (dataPointsRef.current.length > 0) {
+      const lastIndex = dataPointsRef.current.length - 1;
+      dataPointsRef.current[lastIndex] = {
+        ...dataPointsRef.current[lastIndex],
+        gyroscope: gyroscopeData,
+      };
     }
-  }, [currentData]);
+  }, []);
 
   // Helper to get specific error message
   const getGeoErrorMessage = (code: number) => {
@@ -174,6 +176,9 @@ export const useMotionSensors = () => {
           accuracy: position.coords.accuracy,
           timestamp: Date.now()
         };
+
+        // Cache for high-frequency updates
+        lastKnownLocationRef.current = locationData;
 
         // if (currentData) check removed
 
