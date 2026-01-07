@@ -92,6 +92,7 @@ export const useMotionSensors = () => {
   };
 
   const lastKnownLocationRef = useRef<LocationData | null>(null);
+  const lastKnownGyroscopeRef = useRef<GyroscopeData | null>(null);
 
   const handleAccelerometerData = useCallback((event: DeviceMotionEvent) => {
     if (!event.accelerationIncludingGravity) return;
@@ -105,7 +106,7 @@ export const useMotionSensors = () => {
 
     const newDataPoint: RideDataPoint = {
       accelerometer: accelerometerData,
-      gyroscope: null, // Will be updated if gyro event fires
+      gyroscope: lastKnownGyroscopeRef.current, // Will be updated if gyro event fires
       location: lastKnownLocationRef.current, // Use cached location
       timestamp: Date.now()
     };
@@ -125,6 +126,9 @@ export const useMotionSensors = () => {
       gamma: event.gamma || 0,
       timestamp: Date.now()
     };
+
+    // Cache for high-frequency updates
+    lastKnownGyroscopeRef.current = gyroscopeData;
 
     // Update state without stale check
     setCurrentData(prev => prev ? {
