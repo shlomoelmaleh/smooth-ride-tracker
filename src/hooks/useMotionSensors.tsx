@@ -7,11 +7,11 @@ export const useMotionSensors = () => {
   const [currentData, setCurrentData] = useState<RideDataPoint | null>(null);
   const [dataPoints, setDataPoints] = useState<RideDataPoint[]>([]);
   const dataPointsRef = useRef<RideDataPoint[]>([]);
-  
+
   const [hasAccelerometer, setHasAccelerometer] = useState(false);
   const [hasGyroscope, setHasGyroscope] = useState(false);
   const [hasGeolocation, setHasGeolocation] = useState(false);
-  
+
   const accelerometerRef = useRef<number | null>(null);
   const gyroscopeRef = useRef<number | null>(null);
   const geolocationRef = useRef<number | null>(null);
@@ -21,22 +21,24 @@ export const useMotionSensors = () => {
     // Check for DeviceMotionEvent and DeviceOrientationEvent
     // IOS 13+ requires permission for these
     if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-      // We'll set flags but won't know for sure until we request permission
-      setHasAccelerometer(true); 
+      // iOS: We set it to true initially to ENABLE the start button.
+      // If permission is denied later, we will set it to false.
+      setHasAccelerometer(true);
     } else if ('DeviceMotionEvent' in window) {
+      // Non-iOS (Android/Desktop): capable by default
       setHasAccelerometer(true);
     }
-    
+
     if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-      setHasGyroscope(true);
+      // iOS: Wait for permission
     } else if ('DeviceOrientationEvent' in window) {
       setHasGyroscope(true);
     }
-    
+
     if ('geolocation' in navigator) {
       setHasGeolocation(true);
     }
-    
+
     // Clean up wake lock on unmount
     return () => {
       if (wakeLockRef.current) {
@@ -66,7 +68,7 @@ export const useMotionSensors = () => {
           return false;
         }
       }
-      
+
       if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
         const permissionState = await (DeviceOrientationEvent as any).requestPermission();
         if (permissionState !== 'granted') {
@@ -74,7 +76,7 @@ export const useMotionSensors = () => {
           console.warn('Gyroscope permission denied');
         }
       }
-      
+
       return true;
     } catch (error) {
       console.error('Permission request error:', error);
@@ -84,43 +86,43 @@ export const useMotionSensors = () => {
 
   const handleAccelerometerData = useCallback((event: DeviceMotionEvent) => {
     if (!event.accelerationIncludingGravity) return;
-    
+
     const accelerometerData: AccelerometerData = {
       x: event.accelerationIncludingGravity.x || 0,
       y: event.accelerationIncludingGravity.y || 0,
       z: event.accelerationIncludingGravity.z || 0,
       timestamp: Date.now()
     };
-    
+
     const newDataPoint: RideDataPoint = {
       accelerometer: accelerometerData,
       gyroscope: null,
       location: null,
       timestamp: Date.now()
     };
-    
+
     setCurrentData(prev => ({
       ...prev,
       ...newDataPoint,
     }));
-    
+
     dataPointsRef.current.push(newDataPoint);
   }, []);
 
   const handleGyroscopeData = useCallback((event: DeviceOrientationEvent) => {
     const gyroscopeData: GyroscopeData = {
       alpha: event.alpha || 0,
-      beta: event.beta || 0, 
+      beta: event.beta || 0,
       gamma: event.gamma || 0,
       timestamp: Date.now()
     };
-    
+
     if (currentData) {
       setCurrentData(prev => prev ? {
         ...prev,
         gyroscope: gyroscopeData,
       } : null);
-      
+
       if (dataPointsRef.current.length > 0) {
         const lastIndex = dataPointsRef.current.length - 1;
         dataPointsRef.current[lastIndex] = {
@@ -133,7 +135,7 @@ export const useMotionSensors = () => {
 
   const setupGeolocation = useCallback(() => {
     if (!hasGeolocation) return;
-    
+
     return navigator.geolocation.watchPosition(
       (position) => {
         const locationData: LocationData = {
@@ -142,13 +144,13 @@ export const useMotionSensors = () => {
           accuracy: position.coords.accuracy,
           timestamp: Date.now()
         };
-        
+
         if (currentData) {
           setCurrentData(prev => prev ? {
             ...prev,
             location: locationData,
           } : null);
-          
+
           const lastIndex = dataPointsRef.current.length - 1;
           if (lastIndex >= 0) {
             dataPointsRef.current[lastIndex] = {
@@ -179,45 +181,45 @@ export const useMotionSensors = () => {
       toast.error('Accelerometer not available on this device');
       return false;
     }
-    
+
     dataPointsRef.current = [];
     setDataPoints([]);
-    
+
     if (hasAccelerometer) {
       window.addEventListener('devicemotion', handleAccelerometerData);
     }
-    
+
     if (hasGyroscope) {
       window.addEventListener('deviceorientation', handleGyroscopeData);
     }
-    
+
     if (hasGeolocation) {
       geolocationRef.current = setupGeolocation() || null;
     }
-    
+
     setIsTracking(true);
-    
+
     const intervalId = setInterval(() => {
       setDataPoints([...dataPointsRef.current]);
     }, 1000);
-    
+
     return intervalId;
   }, [
-    hasAccelerometer, 
-    hasGyroscope, 
-    hasGeolocation, 
-    handleAccelerometerData, 
-    handleGyroscopeData, 
+    hasAccelerometer,
+    hasGyroscope,
+    hasGeolocation,
+    handleAccelerometerData,
+    handleGyroscopeData,
     setupGeolocation
   ]);
 
   const stopTracking = useCallback((intervalId: number) => {
     window.removeEventListener('devicemotion', handleAccelerometerData);
-    
+
     if (hasGyroscope) {
       window.removeEventListener('deviceorientation', handleGyroscopeData);
     }
-    
+
     if (geolocationRef.current !== null && hasGeolocation) {
       navigator.geolocation.clearWatch(geolocationRef.current);
     }
@@ -228,12 +230,12 @@ export const useMotionSensors = () => {
         wakeLockRef.current = null;
       }).catch(e => console.error(e));
     }
-    
+
     clearInterval(intervalId);
-    
+
     setDataPoints([...dataPointsRef.current]);
     setIsTracking(false);
-    
+
     return dataPointsRef.current;
   }, [handleAccelerometerData, handleGyroscopeData, hasGeolocation]);
 
