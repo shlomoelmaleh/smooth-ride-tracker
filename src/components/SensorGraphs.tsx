@@ -56,19 +56,19 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
               }}
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart 
-                  data={sampledData} 
+                <LineChart
+                  data={sampledData}
                   margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="index" 
-                    label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }} 
+                  <XAxis
+                    dataKey="index"
+                    label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
                     tick={false}
                     axisLine={{ strokeWidth: 1.5 }}
                   />
-                  <YAxis 
-                    label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 15 }} 
+                  <YAxis
+                    label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 15 }}
                     width={60}
                     axisLine={{ strokeWidth: 1.5 }}
                     tickMargin={10}
@@ -101,19 +101,19 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                 }}
               >
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart 
-                    data={gyroscopeData} 
+                  <LineChart
+                    data={gyroscopeData}
                     margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="index" 
-                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }} 
+                    <XAxis
+                      dataKey="index"
+                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
                       tick={false}
                       axisLine={{ strokeWidth: 1.5 }}
                     />
-                    <YAxis 
-                      label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: 15 }} 
+                    <YAxis
+                      label={{ value: 'degrees', angle: -90, position: 'insideLeft', offset: 15 }}
                       width={60}
                       axisLine={{ strokeWidth: 1.5 }}
                       tickMargin={10}
@@ -123,6 +123,55 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                     <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
                     <Line type="monotone" dataKey="beta" name="Beta" stroke="var(--color-beta)" dot={false} />
                     <Line type="monotone" dataKey="gamma" name="Gamma" stroke="var(--color-gamma)" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {dataPoints.some(p => p.location !== null) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>GPS Data</CardTitle>
+            <CardDescription>Latitude and Longitude updates</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="h-[400px] px-4 py-6">
+              <ChartContainer
+                config={{
+                  lat: { theme: { light: '#06b6d4', dark: '#06b6d4' } },
+                  lng: { theme: { light: '#84cc16', dark: '#84cc16' } },
+                }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={dataPoints.filter((_, i) => i % sampleRate === 0).map((p, i) => ({
+                      index: i,
+                      lat: p.location?.latitude,
+                      lng: p.location?.longitude
+                    }))}
+                    margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="index"
+                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
+                      tick={false}
+                      axisLine={{ strokeWidth: 1.5 }}
+                    />
+                    <YAxis
+                      domain={['auto', 'auto']}
+                      label={{ value: 'Coordin.', angle: -90, position: 'insideLeft', offset: 15 }}
+                      width={60}
+                      axisLine={{ strokeWidth: 1.5 }}
+                      tickMargin={10}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Legend verticalAlign="top" height={40} />
+                    <Line type="step" dataKey="lat" name="Latitude" stroke="var(--color-lat)" dot={false} strokeWidth={2} />
+                    <Line type="step" dataKey="lng" name="Longitude" stroke="var(--color-lng)" dot={false} strokeWidth={2} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartContainer>
