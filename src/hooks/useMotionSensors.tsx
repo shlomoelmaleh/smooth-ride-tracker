@@ -14,6 +14,7 @@ export const useMotionSensors = () => {
   
   const accelerometerRef = useRef<number | null>(null);
   const gyroscopeRef = useRef<number | null>(null);
+  const geolocationRef = useRef<number | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
