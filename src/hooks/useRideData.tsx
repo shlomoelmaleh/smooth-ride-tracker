@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RideSession, RideStats, RideDataPoint } from '@/types';
+import { RideSession, RideStats, RideDataPoint, GpsUpdate } from '@/types';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
 import { buildRideMetadata } from '@/lib/metadata';
@@ -247,7 +247,7 @@ export const useRideData = () => {
   };
 
   // End the current ride and save it
-  const endRide = async (dataPoints: RideDataPoint[]) => {
+  const endRide = async (dataPoints: RideDataPoint[], gpsUpdates: GpsUpdate[]) => {
     if (!currentRide) return null;
 
     const endTime = Date.now();
@@ -260,6 +260,7 @@ export const useRideData = () => {
       ...currentRide,
       endTime,
       dataPoints,
+      gpsUpdates,
       smoothnessScore,
       distance,
       duration,

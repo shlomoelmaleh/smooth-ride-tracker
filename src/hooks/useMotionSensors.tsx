@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AccelerometerData, GyroscopeData, LocationData, RideDataPoint } from '@/types';
+import { AccelerometerData, GyroscopeData, LocationData, RideDataPoint, GpsUpdate } from '@/types';
 import { toast } from 'sonner';
 import { calculateEarthAcceleration } from '@/utils/motionMath';
 
@@ -8,6 +8,8 @@ export const useMotionSensors = () => {
   const [currentData, setCurrentData] = useState<RideDataPoint | null>(null);
   const [dataPoints, setDataPoints] = useState<RideDataPoint[]>([]);
   const dataPointsRef = useRef<RideDataPoint[]>([]);
+  const gpsUpdatesRef = useRef<GpsUpdate[]>([]);
+  const [gpsUpdates, setGpsUpdates] = useState<GpsUpdate[]>([]);
 
   const hasGyroscopeRefIndex = useRef(false); // Renamed to avoid confusion with value refs
 
@@ -187,8 +189,18 @@ export const useMotionSensors = () => {
           timestamp: Date.now()
         };
 
+        const trueGpsUpdate: GpsUpdate = {
+          timestamp: Date.now(),
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          speed: position.coords.speed,
+          heading: position.coords.heading
+        };
+
         // Cache for high-frequency updates
         lastKnownLocationRef.current = locationData;
+        gpsUpdatesRef.current.push(trueGpsUpdate);
 
         // if (currentData) check removed
 
@@ -231,7 +243,9 @@ export const useMotionSensors = () => {
     }
 
     dataPointsRef.current = [];
+    gpsUpdatesRef.current = [];
     setDataPoints([]);
+    setGpsUpdates([]);
 
     if (hasAccelerometer) {
       window.addEventListener('devicemotion', handleAccelerometerData);
@@ -251,6 +265,7 @@ export const useMotionSensors = () => {
 
     const intervalId = setInterval(() => {
       setDataPoints([...dataPointsRef.current]);
+      setGpsUpdates([...gpsUpdatesRef.current]);
     }, 1000);
 
     return intervalId;
@@ -286,15 +301,20 @@ export const useMotionSensors = () => {
     clearInterval(intervalId);
 
     setDataPoints([...dataPointsRef.current]);
+    setGpsUpdates([...gpsUpdatesRef.current]);
     setIsTracking(false);
 
-    return dataPointsRef.current;
+    return {
+      dataPoints: dataPointsRef.current,
+      gpsUpdates: gpsUpdatesRef.current
+    };
   }, [handleAccelerometerData, handleGyroscopeData, hasGeolocation]);
 
   return {
     isTracking,
     currentData,
     dataPoints,
+    gpsUpdates,
     hasAccelerometer,
     hasGyroscope,
     hasGeolocation,

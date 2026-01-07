@@ -34,11 +34,21 @@ export interface RideDataPoint {
   timestamp: number;
 }
 
+export interface GpsUpdate {
+  timestamp: number;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  speed: number | null;
+  heading: number | null;
+}
+
 export interface RideSession {
   id: string;
   startTime: number;
   endTime: number | null;
   dataPoints: RideDataPoint[];
+  gpsUpdates?: GpsUpdate[]; // The stream of raw GPS update events
   smoothnessScore?: number;
   distance?: number;
   duration?: number;

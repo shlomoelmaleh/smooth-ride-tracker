@@ -108,12 +108,26 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
             <h2 className="text-sm font-semibold">Technical Info</h2>
             <div className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1">
               <p>ID: <span className="font-mono">{ride.id.slice(-8)}</span></p>
-              <p>Duration: {((ride.endTime || Date.now()) - ride.startTime) / 1000 >= 1 ? (((ride.endTime || Date.now()) - ride.startTime) / 1000).toFixed(1) + 's' : ((ride.endTime || Date.now()) - ride.startTime).toFixed(0) + 'ms'}</p>
-              <p>Accel: {ride.metadata?.counts?.accelSamples ?? ride.dataPoints.length} ({ride.metadata?.sampling?.accelerometerHz ?? 'N/A'} Hz)</p>
-              <p>Gyro: {ride.metadata?.counts?.gyroSamples ?? 'N/A'} ({ride.metadata?.sampling?.gyroscopeHz ?? 'N/A'} Hz)</p>
-              <p>GPS: {ride.metadata?.counts?.gpsSamples ?? 'N/A'} ({ride.metadata?.sampling?.gpsHz ?? 'N/A'} Hz)</p>
-              <p>Dist: {ride.metadata?.statsSummary?.gpsDistanceMeters?.toFixed(1) ?? ride.distance?.toFixed(1) ?? '0'} m</p>
+              <p>Duration: {ride.metadata?.durationMs ? (ride.metadata.durationMs / 1000).toFixed(1) + 's' : 'N/A'}</p>
+              <p>Accel: {ride.metadata?.counts?.accelSamples ?? '0'} ({ride.metadata?.sampling?.accelerometerHz ?? '0'} Hz)</p>
+              <p>Gyro: {ride.metadata?.counts?.gyroSamples ?? '0'} ({ride.metadata?.sampling?.gyroscopeHz ?? '0'} Hz)</p>
+              <p>GPS Updates: {ride.metadata?.counts?.gpsUpdates ?? '0'} ({ride.metadata?.sampling?.gpsHz ?? '0'} Hz)</p>
+              <p>Dist: {ride.metadata?.statsSummary?.gpsDistanceMeters?.toFixed(1) ?? '0'} m</p>
             </div>
+
+            {ride.metadata?.qualityFlags && (
+              <div className="mt-2 space-y-1">
+                {ride.metadata.qualityFlags.isGpsLikelyDuplicated && (
+                  <p className="text-[10px] text-amber-500 font-medium">⚠️ GPS data may be duplicated (low update rate)</p>
+                )}
+                {ride.metadata.qualityFlags.hasLowGpsQuality && (
+                  <p className="text-[10px] text-amber-500 font-medium">⚠️ Low GPS quality detected (inaccurate or jumps)</p>
+                )}
+                {ride.metadata.qualityFlags.isStationaryLikely && (
+                  <p className="text-[10px] text-blue-500 font-medium">ℹ️ Ride appears to be stationary</p>
+                )}
+              </div>
+            )}
           </div>
           <div className="grid gap-2">
             <h2 className="text-sm font-semibold">Battery Impact</h2>

@@ -90,10 +90,10 @@ const Index = () => {
 
   const handleStopTracking = async () => {
     if (intervalRef.current !== null) {
-      const finalData = stopTracking(intervalRef.current);
+      const { dataPoints: finalData, gpsUpdates: finalGps } = stopTracking(intervalRef.current);
       intervalRef.current = null;
 
-      const completed = await endRide(finalData);
+      const completed = await endRide(finalData, finalGps);
       if (completed) {
         setCompletedRide(completed);
         toast.success('Ride completed and saved');
