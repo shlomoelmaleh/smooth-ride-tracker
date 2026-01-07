@@ -59,7 +59,10 @@ export const useMotionSensors = () => {
             toast.error('Motion permission denied');
             return false;
           }
-          // toast.success('Motion granted');
+
+          // On iOS, this single permission usually covers both Motion and Orientation
+          setHasGyroscope(true);
+          toast.success('Motion & Orientation granted');
         } catch (e) {
           console.error(e);
           toast.error('Motion request failed');
