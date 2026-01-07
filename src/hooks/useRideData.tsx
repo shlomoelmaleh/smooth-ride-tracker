@@ -3,6 +3,13 @@ import { RideSession, RideStats, RideDataPoint, GpsUpdate } from '@/types';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
 import { buildRideMetadata } from '@/lib/metadata';
+import {
+  saveRideToDB,
+  getAllRidesFromDB,
+  deleteRideFromDB,
+  clearAllRidesFromDB,
+  migrateFromLocalStorage
+} from '@/lib/storage';
 
 // Calculate the smoothness score from accelerometer data
 const calculateSmoothnessScore = (dataPoints: RideDataPoint[]): number => {
@@ -150,28 +157,28 @@ export const useRideData = () => {
   const [lastCompressedBlob, setLastCompressedBlob] = useState<Blob | null>(null);
   const [lastCompressedFilename, setLastCompressedFilename] = useState<string>('');
 
-  // Load rides from localStorage on mount
+  // Load rides from storage on mount
   useEffect(() => {
-    try {
-      const storedRides = localStorage.getItem('smartRideData');
-      if (storedRides) {
-        setRides(JSON.parse(storedRides));
-      }
-    } catch (error) {
-      console.error('Error loading ride data:', error);
-      toast.error('Failed to load ride history');
-    }
-  }, []);
+    const initStorage = async () => {
+      try {
+        // 1. Try migration first
+        await migrateFromLocalStorage();
 
-  // Save rides to localStorage whenever they change
-  useEffect(() => {
-    try {
-      localStorage.setItem('smartRideData', JSON.stringify(rides));
-    } catch (error) {
-      console.error('Error saving ride data:', error);
-      toast.error('Failed to save ride data');
-    }
-  }, [rides]);
+        // 2. Load from DB
+        const dbRides = await getAllRidesFromDB();
+        setRides(dbRides);
+      } catch (error) {
+        console.error('Error initialization storage:', error);
+        // Fallback to localStorage if something really broke
+        try {
+          const storedRides = localStorage.getItem('smartRideData');
+          if (storedRides) setRides(JSON.parse(storedRides));
+        } catch (e) { }
+      }
+    };
+
+    initStorage();
+  }, []);
 
   // Generate filename for ride
   const generateFilename = (ride: RideSession, extension = 'json') => {
@@ -270,6 +277,14 @@ export const useRideData = () => {
     // Attach metadata
     completedRide.metadata = buildRideMetadata(completedRide);
 
+    // Save to DB
+    try {
+      await saveRideToDB(completedRide);
+    } catch (error) {
+      console.error('DB Save error:', error);
+      toast.error('Failed to persist ride to database');
+    }
+
     setRides(prev => [...prev, completedRide]);
     setCurrentRide(null);
 
@@ -284,8 +299,27 @@ export const useRideData = () => {
   };
 
   // Delete a specific ride
-  const deleteRide = (rideId: string) => {
-    setRides(prev => prev.filter(ride => ride.id !== rideId));
+  const deleteRide = async (rideId: string) => {
+    try {
+      await deleteRideFromDB(rideId);
+      setRides(prev => prev.filter(ride => ride.id !== rideId));
+      toast.success('Ride deleted');
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete ride');
+    }
+  };
+
+  // Clear all history
+  const clearAllRides = async () => {
+    try {
+      await clearAllRidesFromDB();
+      setRides([]);
+      toast.success('All ride history cleared');
+    } catch (error) {
+      console.error('Clear error:', error);
+      toast.error('Failed to clear history');
+    }
   };
 
   // Export ride data
@@ -336,6 +370,7 @@ export const useRideData = () => {
     updateRideData,
     endRide,
     deleteRide,
+    clearAllRides,
     exportRideData,
     getRideStats
   };
