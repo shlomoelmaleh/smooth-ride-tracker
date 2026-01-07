@@ -8,6 +8,8 @@ export const useMotionSensors = () => {
   const [dataPoints, setDataPoints] = useState<RideDataPoint[]>([]);
   const dataPointsRef = useRef<RideDataPoint[]>([]);
 
+  const hasGyroscopeRefIndex = useRef(false); // Renamed to avoid confusion with value refs
+
   const [hasAccelerometer, setHasAccelerometer] = useState(false);
   const [hasGyroscope, setHasGyroscope] = useState(false);
   const [hasGeolocation, setHasGeolocation] = useState(false);
@@ -33,6 +35,7 @@ export const useMotionSensors = () => {
       // iOS: Wait for permission
     } else if ('DeviceOrientationEvent' in window) {
       setHasGyroscope(true);
+      hasGyroscopeRefIndex.current = true;
     }
 
     if ('geolocation' in navigator) {
@@ -62,6 +65,7 @@ export const useMotionSensors = () => {
 
           // On iOS, this single permission usually covers both Motion and Orientation
           setHasGyroscope(true);
+          hasGyroscopeRefIndex.current = true;
           toast.success('Motion & Orientation granted');
         } catch (e) {
           console.error(e);
@@ -71,20 +75,13 @@ export const useMotionSensors = () => {
       }
 
       if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-        try {
-          // toast.info('Requesting Gyro...');
-          const permissionState = await (DeviceOrientationEvent as any).requestPermission();
-          if (permissionState !== 'granted') {
-            console.warn('Gyroscope permission denied');
-            toast.error('Gyroscope permission denied (iOS)');
-          } else {
-            setHasGyroscope(true);
-            toast.success('Gyroscope granted');
-          }
-        } catch (e) {
-          console.error(e);
-          // toast.error('Gyro request failed');
-        }
+        // We already handled implicit gyro permission above for iOS, but just in case
+        // some future/other browsers separate them or we need to be explicit:
+        /* 
+        try { 
+           // ... logic kept for reference but skipped to avoid double prompts 
+        } 
+        */
       }
 
       // Request Wake Lock AFTER motion permissions
@@ -243,7 +240,8 @@ export const useMotionSensors = () => {
       window.addEventListener('devicemotion', handleAccelerometerData);
     }
 
-    if (hasGyroscope) {
+    // Use ref to check for gyro support including recently granted permission
+    if (hasGyroscope || hasGyroscopeRefIndex.current) {
       window.addEventListener('deviceorientation', handleGyroscopeData);
     }
 
@@ -251,6 +249,7 @@ export const useMotionSensors = () => {
       geolocationRef.current = setupGeolocation() || null;
     }
 
+    // ... rest of startTracking
     setIsTracking(true);
 
     const intervalId = setInterval(() => {
@@ -264,13 +263,15 @@ export const useMotionSensors = () => {
     hasGeolocation,
     handleAccelerometerData,
     handleGyroscopeData,
-    setupGeolocation
+    setupGeolocation,
+    requestPermissions // Added dependency
   ]);
 
   const stopTracking = useCallback((intervalId: number) => {
     window.removeEventListener('devicemotion', handleAccelerometerData);
 
-    if (hasGyroscope) {
+    // Use ref here too just to be safe, though state should have updated by now
+    if (hasGyroscope || hasGyroscopeRefIndex.current) {
       window.removeEventListener('deviceorientation', handleGyroscopeData);
     }
 
