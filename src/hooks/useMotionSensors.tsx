@@ -49,38 +49,19 @@ export const useMotionSensors = () => {
 
   const requestPermissions = async (): Promise<boolean> => {
     try {
-      // DEBUG: Trace flow
-      alert('Requesting permissions...');
-
-      // Request Wake Lock
-      if ('wakeLock' in navigator) {
-        try {
-          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-          console.log('Wake Lock active');
-        } catch (err) {
-          console.error('Wake Lock Error:', err);
-          // Continue anyway, wake lock is nice-to-have
-        }
-      }
-
-      // Handle iOS 13+ permissions
+      // Handle iOS 13+ permissions FIRST to preserve user gesture
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-        alert('iOS detected, asking for Motion...');
         try {
           const permissionState = await (DeviceMotionEvent as any).requestPermission();
-          alert(`Motion permission: ${permissionState}`);
 
           if (permissionState !== 'granted') {
             toast.error('Motion sensor permission denied');
             return false;
           }
         } catch (e) {
-          alert(`Error requesting motion: ${e}`);
           console.error(e);
           return false;
         }
-      } else {
-        alert('Not iOS or no requestPermission function');
       }
 
       if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
@@ -94,9 +75,18 @@ export const useMotionSensors = () => {
         }
       }
 
+      // Request Wake Lock AFTER motion permissions
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log('Wake Lock active');
+        } catch (err) {
+          console.error('Wake Lock Error:', err);
+        }
+      }
+
       return true;
     } catch (error) {
-      alert(`General Error: ${error}`);
       console.error('Permission request error:', error);
       return false;
     }
