@@ -216,7 +216,10 @@ export const useRideData = () => {
       const dataStr = JSON.stringify(ride, null, 2);
       const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
 
-      const exportFileDefaultName = `smartride_${new Date(ride.startTime).toISOString().split('T')[0]}.json`;
+      const date = new Date(ride.startTime);
+      const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+      const shortId = ride.id.slice(-5);
+      const exportFileDefaultName = `smartride_${timestamp}_${shortId}.json`;
 
       const linkElement = document.createElement('a');
       linkElement.setAttribute('href', dataUri);
