@@ -53,7 +53,7 @@ export interface RideMetadata {
  */
 export function buildRideMetadata(
     ride: RideSession,
-    appVersion: string = '0.2.2'
+    appVersion: string = '0.2.3'
 ): RideMetadata {
     const { startTime, endTime, dataPoints } = ride;
     const durationMs = (endTime || Date.now()) - startTime;
