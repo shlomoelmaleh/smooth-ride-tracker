@@ -56,7 +56,6 @@ export const useMotionSensors = () => {
       // Handle iOS 13+ permissions FIRST to preserve user gesture
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
         try {
-          // toast.info('Requesting Motion...');
           const permissionState = await (DeviceMotionEvent as any).requestPermission();
 
           if (permissionState !== 'granted') {
@@ -64,10 +63,9 @@ export const useMotionSensors = () => {
             return false;
           }
 
-          // On iOS, this single permission usually covers both Motion and Orientation
+          // On iOS, this single permission covers both Motion and Orientation
           setHasGyroscope(true);
           hasGyroscopeRefIndex.current = true;
-          toast.success('Motion & Orientation granted');
         } catch (e) {
           console.error(e);
           toast.error('Motion request failed');
@@ -75,15 +73,8 @@ export const useMotionSensors = () => {
         }
       }
 
-      if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-        // We already handled implicit gyro permission above for iOS, but just in case
-        // some future/other browsers separate them or we need to be explicit:
-        /* 
-        try { 
-           // ... logic kept for reference but skipped to avoid double prompts 
-        } 
-        */
-      }
+      // Orientation permission handled via Motion on iOS
+
 
       // Request Wake Lock AFTER motion permissions
       if ('wakeLock' in navigator) {

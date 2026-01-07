@@ -171,9 +171,9 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                     />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Legend verticalAlign="top" height={40} />
-                    <Line type="monotone" dataKey="ex" name="Vertical (Z)" stroke="var(--color-ex)" dot={false} />
+                    <Line type="monotone" dataKey="ez" name="Vertical (Z)" stroke="var(--color-ez)" dot={false} />
                     <Line type="monotone" dataKey="ey" name="Lateral (Y)" stroke="var(--color-ey)" dot={false} />
-                    <Line type="monotone" dataKey="ez" name="Longitudinal (X)" stroke="var(--color-ez)" dot={false} />
+                    <Line type="monotone" dataKey="ex" name="Longitudinal (X)" stroke="var(--color-ex)" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartContainer>
