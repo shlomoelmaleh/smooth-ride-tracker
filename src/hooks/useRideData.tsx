@@ -158,9 +158,9 @@ export const useRideData = () => {
   // Start a new ride session
   const startRide = () => {
     const timestamp = Date.now();
-    const randomPart = Math.floor(Math.random() * 10000000000).toString().padStart(10, '0');
+    const randomNum = Math.floor(Math.random() * 10000000000);
     const newRide: RideSession = {
-      id: `${timestamp}-${randomPart}`,
+      id: (timestamp + randomNum).toString(),
       startTime: timestamp,
       endTime: null,
       dataPoints: []
