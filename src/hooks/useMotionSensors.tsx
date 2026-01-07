@@ -69,6 +69,9 @@ export const useMotionSensors = () => {
           const permissionState = await (DeviceOrientationEvent as any).requestPermission();
           if (permissionState !== 'granted') {
             console.warn('Gyroscope permission denied');
+            toast.error('Gyroscope permission denied');
+          } else {
+            setHasGyroscope(true);
           }
         } catch (e) {
           console.error(e);
