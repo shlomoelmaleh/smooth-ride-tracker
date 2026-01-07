@@ -16,7 +16,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </main>
       <footer className="text-center text-xs text-muted-foreground py-4">
-        <p>SmartRide &copy; {new Date().getFullYear()} | Privacy Focused Ride Tracking | v0.0.2</p>
+        <p>SmartRide &copy; {new Date().getFullYear()} | Privacy Focused Ride Tracking | v0.0.3</p>
       </footer>
     </div>
   );

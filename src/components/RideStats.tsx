@@ -14,12 +14,12 @@ interface RideStatsProps {
 
 const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
   const [showGraphs, setShowGraphs] = useState(false);
-  
+
   const formatDuration = (durationInSeconds: number): string => {
     const hours = Math.floor(durationInSeconds / 3600);
     const minutes = Math.floor((durationInSeconds % 3600) / 60);
     const seconds = Math.floor(durationInSeconds % 60);
-    
+
     let formatted = '';
     if (hours > 0) {
       formatted += `${hours}h `;
@@ -28,10 +28,10 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
       formatted += `${minutes}m `;
     }
     formatted += `${seconds}s`;
-    
+
     return formatted;
   };
-  
+
   const formatDistance = (distanceInMeters: number): string => {
     const distanceInKilometers = distanceInMeters / 1000;
     return `${distanceInKilometers.toFixed(2)} km`;
@@ -103,6 +103,14 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
               {stats.vibrationLevel.toFixed(2)}
             </p>
           </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Sampling Stats</h2>
+            <div className="text-xs text-muted-foreground">
+              <p>Samples: {ride.dataPoints.length}</p>
+              <p>Duration: {((ride.endTime || Date.now()) - ride.startTime).toFixed(0)} ms</p>
+              <p>Rate: {(ride.dataPoints.length / (((ride.endTime || Date.now()) - ride.startTime) / 1000)).toFixed(1)} Hz</p>
+            </div>
+          </div>
         </CardContent>
         <CardFooter className="justify-between items-center">
           <p className="text-sm text-muted-foreground">
@@ -120,7 +128,7 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
           </div>
         </CardFooter>
       </Card>
-      
+
       {showGraphs && ride.dataPoints.length > 0 && (
         <SensorGraphs dataPoints={ride.dataPoints} />
       )}
