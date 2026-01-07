@@ -31,13 +31,45 @@ const Index = () => {
   } = useRideData();
 
   const [completedRide, setCompletedRide] = useState<any>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const intervalRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isTracking && currentRide) {
       updateRideData(dataPoints);
     }
   }, [isTracking, dataPoints, currentRide, updateRideData]);
+
+  // Timer effect
+  useEffect(() => {
+    if (isTracking) {
+      setElapsedSeconds(0);
+      timerRef.current = window.setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isTracking]);
+
+  const formatElapsedTime = (seconds: number): string => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return [
+      hrs.toString().padStart(2, '0'),
+      mins.toString().padStart(2, '0'),
+      secs.toString().padStart(2, '0')
+    ].join(':');
+  };
 
   const handleStartTracking = async () => {
     // Start the ride session first
@@ -46,7 +78,7 @@ const Index = () => {
     const intervalId = await startTracking();
 
     if (intervalId) {
-      startRide(); // Only start the ride if we actually got permissions/started tracking
+      await startRide(); // Only start the ride if we actually got permissions/started tracking
       intervalRef.current = intervalId as unknown as number;
       toast.success('Ride tracking started');
     } else {
@@ -55,12 +87,12 @@ const Index = () => {
     }
   };
 
-  const handleStopTracking = () => {
+  const handleStopTracking = async () => {
     if (intervalRef.current !== null) {
       const finalData = stopTracking(intervalRef.current);
       intervalRef.current = null;
 
-      const completed = endRide(finalData);
+      const completed = await endRide(finalData);
       if (completed) {
         setCompletedRide(completed);
         toast.success('Ride completed and saved');
@@ -110,7 +142,7 @@ const Index = () => {
             />
           </motion.div>
 
-          {isTracking && currentData && (
+          {isTracking && (
             <motion.div
               className="mt-6 animate-fade-in"
               initial={{ opacity: 0, y: 10 }}
@@ -119,13 +151,15 @@ const Index = () => {
             >
               <Card>
                 <CardContent className="pt-6">
-                  <p className="text-sm mb-2">
-                    Currently tracking <span className="font-semibold">{dataPoints.length}</span> data points
-                  </p>
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>X: {currentData.accelerometer.x.toFixed(2)}</span>
-                    <span>Y: {currentData.accelerometer.y.toFixed(2)}</span>
-                    <span>Z: {currentData.accelerometer.z.toFixed(2)}</span>
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground mb-1">Recording Duration</p>
+                    <p className="text-4xl font-mono font-bold text-primary mb-4">
+                      {formatElapsedTime(elapsedSeconds)}
+                    </p>
+                    <div className="flex justify-center items-center space-x-2 text-xs text-muted-foreground">
+                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      <span>Tracking motion & location</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

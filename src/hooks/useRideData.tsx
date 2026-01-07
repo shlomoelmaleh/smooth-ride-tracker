@@ -128,6 +128,20 @@ const calculateRideStats = (dataPoints: RideDataPoint[]): RideStats => {
   };
 };
 
+// Helper to get battery level safely
+const getBatteryLevel = async (): Promise<number | undefined> => {
+  try {
+    if ('getBattery' in navigator) {
+      const battery: any = await (navigator as any).getBattery();
+      return battery.level;
+    }
+    return undefined;
+  } catch (error) {
+    console.warn('Battery API error:', error);
+    return undefined;
+  }
+};
+
 export const useRideData = () => {
   const [rides, setRides] = useState<RideSession[]>([]);
   const [currentRide, setCurrentRide] = useState<RideSession | null>(null);
@@ -156,14 +170,17 @@ export const useRideData = () => {
   }, [rides]);
 
   // Start a new ride session
-  const startRide = () => {
+  const startRide = async () => {
     const timestamp = Date.now();
     const randomNum = Math.floor(Math.random() * 10000000000);
+    const startBattery = await getBatteryLevel();
+
     const newRide: RideSession = {
       id: (timestamp + randomNum).toString(),
       startTime: timestamp,
       endTime: null,
-      dataPoints: []
+      dataPoints: [],
+      startBattery: startBattery
     };
 
     setCurrentRide(newRide);
@@ -184,13 +201,14 @@ export const useRideData = () => {
   };
 
   // End the current ride and save it
-  const endRide = (dataPoints: RideDataPoint[]) => {
+  const endRide = async (dataPoints: RideDataPoint[]) => {
     if (!currentRide) return null;
 
     const endTime = Date.now();
     const distance = calculateDistance(dataPoints);
     const smoothnessScore = calculateSmoothnessScore(dataPoints);
     const duration = (endTime - currentRide.startTime) / 1000; // in seconds
+    const endBattery = await getBatteryLevel();
 
     const completedRide: RideSession = {
       ...currentRide,
@@ -198,7 +216,8 @@ export const useRideData = () => {
       dataPoints,
       smoothnessScore,
       distance,
-      duration
+      duration,
+      endBattery: endBattery
     };
 
     setRides(prev => [...prev, completedRide]);

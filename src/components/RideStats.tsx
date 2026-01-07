@@ -111,6 +111,14 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
               <p>Rate: {(ride.dataPoints.length / (((ride.endTime || Date.now()) - ride.startTime) / 1000)).toFixed(1)} Hz</p>
             </div>
           </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Battery Impact</h2>
+            <p className="text-sm">
+              {ride.startBattery !== undefined && ride.endBattery !== undefined
+                ? `Used: ${((ride.startBattery - ride.endBattery) * 100).toFixed(1)}%`
+                : 'Not available on this device/browser'}
+            </p>
+          </div>
         </CardContent>
         <CardFooter className="justify-between items-center">
           <p className="text-sm text-muted-foreground">

@@ -42,6 +42,8 @@ export interface RideSession {
   smoothnessScore?: number;
   distance?: number;
   duration?: number;
+  startBattery?: number;
+  endBattery?: number;
 }
 
 export interface RideStats {
