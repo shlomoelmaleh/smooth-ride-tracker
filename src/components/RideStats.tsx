@@ -105,11 +105,14 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
             </p>
           </div>
           <div className="grid gap-2">
-            <h2 className="text-sm font-semibold">Sampling Stats</h2>
-            <div className="text-xs text-muted-foreground">
-              <p>Samples: {ride.dataPoints.length}</p>
-              <p>Duration: {((ride.endTime || Date.now()) - ride.startTime).toFixed(0)} ms</p>
-              <p>Rate: {(ride.dataPoints.length / (((ride.endTime || Date.now()) - ride.startTime) / 1000)).toFixed(1)} Hz</p>
+            <h2 className="text-sm font-semibold">Technical Info</h2>
+            <div className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1">
+              <p>ID: <span className="font-mono">{ride.id.slice(-8)}</span></p>
+              <p>Duration: {((ride.endTime || Date.now()) - ride.startTime) / 1000 >= 1 ? (((ride.endTime || Date.now()) - ride.startTime) / 1000).toFixed(1) + 's' : ((ride.endTime || Date.now()) - ride.startTime).toFixed(0) + 'ms'}</p>
+              <p>Accel: {ride.metadata?.counts?.accelSamples ?? ride.dataPoints.length} ({ride.metadata?.sampling?.accelerometerHz ?? 'N/A'} Hz)</p>
+              <p>Gyro: {ride.metadata?.counts?.gyroSamples ?? 'N/A'} ({ride.metadata?.sampling?.gyroscopeHz ?? 'N/A'} Hz)</p>
+              <p>GPS: {ride.metadata?.counts?.gpsSamples ?? 'N/A'} ({ride.metadata?.sampling?.gpsHz ?? 'N/A'} Hz)</p>
+              <p>Dist: {ride.metadata?.statsSummary?.gpsDistanceMeters?.toFixed(1) ?? ride.distance?.toFixed(1) ?? '0'} m</p>
             </div>
           </div>
           <div className="grid gap-2">

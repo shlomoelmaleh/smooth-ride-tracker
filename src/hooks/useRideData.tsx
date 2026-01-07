@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { RideSession, RideStats, RideDataPoint } from '@/types';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
+import { buildRideMetadata } from '@/lib/metadata';
 
 // Calculate the smoothness score from accelerometer data
 const calculateSmoothnessScore = (dataPoints: RideDataPoint[]): number => {
@@ -185,11 +186,17 @@ export const useRideData = () => {
     try {
       setIsCompressing(true);
       const zip = new JSZip();
+
+      // Original ride data as ride.json
       const jsonContent = JSON.stringify(ride, null, 2);
-      const jsonFilename = generateFilename(ride, 'json');
+      zip.file('ride.json', jsonContent);
+
+      // Metadata as meta.json
+      const metadata = ride.metadata || buildRideMetadata(ride);
+      zip.file('meta.json', JSON.stringify(metadata, null, 2));
+
       const zipFilename = generateFilename(ride, 'zip');
 
-      zip.file(jsonFilename, jsonContent);
       const blob = await zip.generateAsync({
         type: 'blob',
         compression: 'DEFLATE',
@@ -258,6 +265,9 @@ export const useRideData = () => {
       duration,
       endBattery: endBattery
     };
+
+    // Attach metadata
+    completedRide.metadata = buildRideMetadata(completedRide);
 
     setRides(prev => [...prev, completedRide]);
     setCurrentRide(null);

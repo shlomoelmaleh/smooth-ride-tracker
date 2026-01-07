@@ -44,6 +44,7 @@ export interface RideSession {
   duration?: number;
   startBattery?: number;
   endBattery?: number;
+  metadata?: any;
 }
 
 export interface RideStats {
