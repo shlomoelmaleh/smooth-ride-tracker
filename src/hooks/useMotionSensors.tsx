@@ -50,7 +50,7 @@ export const useMotionSensors = () => {
   const requestPermissions = async (): Promise<boolean> => {
     try {
       // DEBUG: Trace flow
-      // alert('Requesting permissions...');
+      alert('Requesting permissions...');
 
       // Request Wake Lock
       if ('wakeLock' in navigator) {
@@ -65,22 +65,22 @@ export const useMotionSensors = () => {
 
       // Handle iOS 13+ permissions
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-        // alert('iOS detected, asking for Motion...');
+        alert('iOS detected, asking for Motion...');
         try {
           const permissionState = await (DeviceMotionEvent as any).requestPermission();
-          // alert(`Motion permission: ${permissionState}`);
+          alert(`Motion permission: ${permissionState}`);
 
           if (permissionState !== 'granted') {
             toast.error('Motion sensor permission denied');
             return false;
           }
         } catch (e) {
-          // alert(`Error requesting motion: ${e}`);
+          alert(`Error requesting motion: ${e}`);
           console.error(e);
           return false;
         }
       } else {
-        // alert('Not iOS or no requestPermission function');
+        alert('Not iOS or no requestPermission function');
       }
 
       if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
@@ -96,7 +96,7 @@ export const useMotionSensors = () => {
 
       return true;
     } catch (error) {
-      // alert(`General Error: ${error}`);
+      alert(`General Error: ${error}`);
       console.error('Permission request error:', error);
       return false;
     }
