@@ -79,7 +79,6 @@ export const useMotionSensors = () => {
       if ('wakeLock' in navigator) {
         try {
           wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-          console.log('Wake Lock active');
         } catch (err) {
           console.error('Wake Lock Error:', err);
         }
