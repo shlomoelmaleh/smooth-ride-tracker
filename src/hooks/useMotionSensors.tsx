@@ -167,19 +167,6 @@ export const useMotionSensors = () => {
   const setupGeolocation = useCallback(() => {
     if (!hasGeolocation) return;
 
-    // Explicitly request position once to ensure permission prompt appears
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        console.log('Initial location acquired:', position);
-        // If successful, we know we have permission, so watchPosition should work
-      },
-      (error) => {
-        console.error('Initial location error:', error);
-        toast.error(`Location Error: ${getGeoErrorMessage(error.code)}`);
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-    );
-
     return navigator.geolocation.watchPosition(
       (position) => {
         const locationData: LocationData = {
@@ -202,8 +189,6 @@ export const useMotionSensors = () => {
         lastKnownLocationRef.current = locationData;
         gpsUpdatesRef.current.push(trueGpsUpdate);
 
-        // if (currentData) check removed
-
         setCurrentData(prev => prev ? {
           ...prev,
           location: locationData,
@@ -216,18 +201,14 @@ export const useMotionSensors = () => {
             location: locationData,
           };
         }
-        // } end check
-
       },
       (error) => {
         console.error('Geolocation error:', error);
-        // Deduplicate error toasts if they happen frequently
-        // toast.error(`GPS Error: ${getGeoErrorMessage(error.code)}`); 
       },
       {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: 5000
+        timeout: 10000 // Increased timeout to avoid constant errors, but maximumAge 0 for frequency
       }
     );
   }, [hasGeolocation]);

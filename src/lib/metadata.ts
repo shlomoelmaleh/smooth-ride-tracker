@@ -90,7 +90,7 @@ function getHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: nu
  */
 export function buildRideMetadata(
     ride: RideSession,
-    appVersion: string = '0.2.3'
+    appVersion: string = '0.2.4'
 ): RideMetadata {
     const { startTime, endTime, dataPoints, gpsUpdates = [] } = ride;
     const durationMs = (endTime || Date.now()) - startTime;
