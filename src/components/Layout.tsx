@@ -1,6 +1,7 @@
 
 import { ReactNode } from 'react';
 import Header from './Header';
+import pkg from '../../package.json';
 
 interface LayoutProps {
   children: ReactNode;
@@ -16,7 +17,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </main>
       <footer className="text-center text-xs text-muted-foreground py-4">
-        <p>SmartRide &copy; {new Date().getFullYear()} | Privacy Focused Ride Tracking | v0.2.4</p>
+        <p>SmartRide &copy; {new Date().getFullYear()} | Privacy Focused Ride Tracking | v{pkg.version}</p>
       </footer>
     </div>
   );

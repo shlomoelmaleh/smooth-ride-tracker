@@ -1,4 +1,6 @@
 import { RideSession, RideDataPoint, GpsUpdate } from '../types';
+import pkg from '../../package.json';
+const PKG_VERSION = pkg.version;
 
 export interface RideMetadata {
     schemaVersion: string;
@@ -90,7 +92,7 @@ function getHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: nu
  */
 export function buildRideMetadata(
     ride: RideSession,
-    appVersion: string = '0.2.4'
+    appVersion: string = PKG_VERSION
 ): RideMetadata {
     const { startTime, endTime, dataPoints, gpsUpdates = [] } = ride;
     const durationMs = (endTime || Date.now()) - startTime;
