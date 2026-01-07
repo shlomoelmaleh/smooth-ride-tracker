@@ -14,21 +14,72 @@ export const useMotionSensors = () => {
   
   const accelerometerRef = useRef<number | null>(null);
   const gyroscopeRef = useRef<number | null>(null);
-  const geolocationRef = useRef<number | null>(null);
-  
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+
   useEffect(() => {
-    if ('DeviceMotionEvent' in window) {
+    // Check for DeviceMotionEvent and DeviceOrientationEvent
+    // IOS 13+ requires permission for these
+    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+      // We'll set flags but won't know for sure until we request permission
+      setHasAccelerometer(true); 
+    } else if ('DeviceMotionEvent' in window) {
       setHasAccelerometer(true);
     }
     
-    if ('DeviceOrientationEvent' in window) {
+    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      setHasGyroscope(true);
+    } else if ('DeviceOrientationEvent' in window) {
       setHasGyroscope(true);
     }
     
     if ('geolocation' in navigator) {
       setHasGeolocation(true);
     }
+    
+    // Clean up wake lock on unmount
+    return () => {
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(e => console.error('Wake Lock Release Error:', e));
+      }
+    };
   }, []);
+
+  const requestPermissions = async (): Promise<boolean> => {
+    try {
+      // Request Wake Lock
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log('Wake Lock active');
+        } catch (err) {
+          console.error('Wake Lock Error:', err);
+          // Continue anyway, wake lock is nice-to-have
+        }
+      }
+
+      // Handle iOS 13+ permissions
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+        const permissionState = await (DeviceMotionEvent as any).requestPermission();
+        if (permissionState !== 'granted') {
+          toast.error('Motion sensor permission denied');
+          return false;
+        }
+      }
+      
+      if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+        const permissionState = await (DeviceOrientationEvent as any).requestPermission();
+        if (permissionState !== 'granted') {
+          // We can still proceed without gyro if accelerometer is granted
+          console.warn('Gyroscope permission denied');
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Permission request error:', error);
+      return false;
+    }
+  };
 
   const handleAccelerometerData = useCallback((event: DeviceMotionEvent) => {
     if (!event.accelerationIncludingGravity) return;
@@ -118,7 +169,11 @@ export const useMotionSensors = () => {
     );
   }, [hasGeolocation, currentData]);
 
-  const startTracking = useCallback(() => {
+  const startTracking = useCallback(async () => {
+    // Request permissions first
+    const granted = await requestPermissions();
+    if (!granted) return false;
+
     if (!hasAccelerometer) {
       toast.error('Accelerometer not available on this device');
       return false;
@@ -165,6 +220,13 @@ export const useMotionSensors = () => {
     if (geolocationRef.current !== null && hasGeolocation) {
       navigator.geolocation.clearWatch(geolocationRef.current);
     }
+
+    // Release wake lock
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().then(() => {
+        wakeLockRef.current = null;
+      }).catch(e => console.error(e));
+    }
     
     clearInterval(intervalId);
     
@@ -172,7 +234,7 @@ export const useMotionSensors = () => {
     setIsTracking(false);
     
     return dataPointsRef.current;
-  }, [handleAccelerometerData, handleGyroscopeData, hasGeolocation, hasGyroscope]);
+  }, [handleAccelerometerData, handleGyroscopeData, hasGeolocation]);
 
   return {
     isTracking,
