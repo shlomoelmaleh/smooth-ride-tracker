@@ -52,29 +52,35 @@ export const useMotionSensors = () => {
       // Handle iOS 13+ permissions FIRST to preserve user gesture
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
         try {
+          // toast.info('Requesting Motion...');
           const permissionState = await (DeviceMotionEvent as any).requestPermission();
 
           if (permissionState !== 'granted') {
-            toast.error('Motion sensor permission denied');
+            toast.error('Motion permission denied');
             return false;
           }
+          // toast.success('Motion granted');
         } catch (e) {
           console.error(e);
+          toast.error('Motion request failed');
           return false;
         }
       }
 
       if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
         try {
+          // toast.info('Requesting Gyro...');
           const permissionState = await (DeviceOrientationEvent as any).requestPermission();
           if (permissionState !== 'granted') {
             console.warn('Gyroscope permission denied');
-            toast.error('Gyroscope permission denied');
+            toast.error('Gyroscope permission denied (iOS)');
           } else {
             setHasGyroscope(true);
+            toast.success('Gyroscope granted');
           }
         } catch (e) {
           console.error(e);
+          // toast.error('Gyro request failed');
         }
       }
 
