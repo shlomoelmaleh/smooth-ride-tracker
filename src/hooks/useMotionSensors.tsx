@@ -49,6 +49,9 @@ export const useMotionSensors = () => {
 
   const requestPermissions = async (): Promise<boolean> => {
     try {
+      // DEBUG: Trace flow
+      // alert('Requesting permissions...');
+
       // Request Wake Lock
       if ('wakeLock' in navigator) {
         try {
@@ -62,23 +65,38 @@ export const useMotionSensors = () => {
 
       // Handle iOS 13+ permissions
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-        const permissionState = await (DeviceMotionEvent as any).requestPermission();
-        if (permissionState !== 'granted') {
-          toast.error('Motion sensor permission denied');
+        // alert('iOS detected, asking for Motion...');
+        try {
+          const permissionState = await (DeviceMotionEvent as any).requestPermission();
+          // alert(`Motion permission: ${permissionState}`);
+
+          if (permissionState !== 'granted') {
+            toast.error('Motion sensor permission denied');
+            return false;
+          }
+        } catch (e) {
+          // alert(`Error requesting motion: ${e}`);
+          console.error(e);
           return false;
         }
+      } else {
+        // alert('Not iOS or no requestPermission function');
       }
 
       if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-        const permissionState = await (DeviceOrientationEvent as any).requestPermission();
-        if (permissionState !== 'granted') {
-          // We can still proceed without gyro if accelerometer is granted
-          console.warn('Gyroscope permission denied');
+        try {
+          const permissionState = await (DeviceOrientationEvent as any).requestPermission();
+          if (permissionState !== 'granted') {
+            console.warn('Gyroscope permission denied');
+          }
+        } catch (e) {
+          console.error(e);
         }
       }
 
       return true;
     } catch (error) {
+      // alert(`General Error: ${error}`);
       console.error('Permission request error:', error);
       return false;
     }
