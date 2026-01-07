@@ -27,7 +27,8 @@ const Index = () => {
     updateRideData,
     endRide,
     exportRideData,
-    getRideStats
+    getRideStats,
+    isCompressing
   } = useRideData();
 
   const [completedRide, setCompletedRide] = useState<any>(null);
@@ -179,6 +180,7 @@ const Index = () => {
               ride={completedRide}
               stats={getRideStats(completedRide)}
               onExport={handleExport}
+              isCompressing={isCompressing}
             />
 
             <div className="mt-6 text-center">

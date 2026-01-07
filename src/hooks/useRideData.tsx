@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { RideSession, RideStats, RideDataPoint } from '@/types';
 import { toast } from 'sonner';
+import JSZip from 'jszip';
 
 // Calculate the smoothness score from accelerometer data
 const calculateSmoothnessScore = (dataPoints: RideDataPoint[]): number => {
@@ -25,7 +26,6 @@ const calculateSmoothnessScore = (dataPoints: RideDataPoint[]): number => {
   const stdDev = Math.sqrt(variance);
 
   // Convert to a 0-100 score (lower stdDev means smoother ride)
-  // The values below are calibrated for typical ride data
   const baseScore = 100 - (stdDev * 10);
 
   // Clamp between 0-100
@@ -145,6 +145,9 @@ const getBatteryLevel = async (): Promise<number | undefined> => {
 export const useRideData = () => {
   const [rides, setRides] = useState<RideSession[]>([]);
   const [currentRide, setCurrentRide] = useState<RideSession | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [lastCompressedBlob, setLastCompressedBlob] = useState<Blob | null>(null);
+  const [lastCompressedFilename, setLastCompressedFilename] = useState<string>('');
 
   // Load rides from localStorage on mount
   useEffect(() => {
@@ -169,6 +172,40 @@ export const useRideData = () => {
     }
   }, [rides]);
 
+  // Generate filename for ride
+  const generateFilename = (ride: RideSession, extension = 'json') => {
+    const date = new Date(ride.startTime);
+    const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+    const shortId = ride.id.slice(-5);
+    return `smartride_${timestamp}_${shortId}.${extension}`;
+  };
+
+  // Helper to compress ride data
+  const compressRideData = async (ride: RideSession): Promise<{ blob: Blob, filename: string } | null> => {
+    try {
+      setIsCompressing(true);
+      const zip = new JSZip();
+      const jsonContent = JSON.stringify(ride, null, 2);
+      const jsonFilename = generateFilename(ride, 'json');
+      const zipFilename = generateFilename(ride, 'zip');
+
+      zip.file(jsonFilename, jsonContent);
+      const blob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 9 }
+      });
+
+      return { blob, filename: zipFilename };
+    } catch (error) {
+      console.error('Compression error:', error);
+      toast.error('Failed to compress ride data');
+      return null;
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
   // Start a new ride session
   const startRide = async () => {
     const timestamp = Date.now();
@@ -183,6 +220,8 @@ export const useRideData = () => {
       startBattery: startBattery
     };
 
+    setLastCompressedBlob(null);
+    setLastCompressedFilename('');
     setCurrentRide(newRide);
     return newRide;
   };
@@ -223,6 +262,13 @@ export const useRideData = () => {
     setRides(prev => [...prev, completedRide]);
     setCurrentRide(null);
 
+    // Initial background compression
+    const result = await compressRideData(completedRide);
+    if (result) {
+      setLastCompressedBlob(result.blob);
+      setLastCompressedFilename(result.filename);
+    }
+
     return completedRide;
   };
 
@@ -232,25 +278,36 @@ export const useRideData = () => {
   };
 
   // Export ride data
-  const exportRideData = (ride: RideSession) => {
+  const exportRideData = async (ride: RideSession) => {
     try {
-      const dataStr = JSON.stringify(ride, null, 2);
-      const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+      let downloadBlob: Blob;
+      let filename: string;
 
-      const date = new Date(ride.startTime);
-      const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
-      const shortId = ride.id.slice(-5);
-      const exportFileDefaultName = `smartride_${timestamp}_${shortId}.json`;
+      if (lastCompressedBlob && generateFilename(ride, 'zip') === lastCompressedFilename) {
+        // Use pre-compressed blob if available
+        downloadBlob = lastCompressedBlob;
+        filename = lastCompressedFilename;
+      } else {
+        // Fallback to on-demand compression (e.g., for history items)
+        const result = await compressRideData(ride);
+        if (!result) return;
+        downloadBlob = result.blob;
+        filename = result.filename;
+      }
 
-      const linkElement = document.createElement('a');
-      linkElement.setAttribute('href', dataUri);
-      linkElement.setAttribute('download', exportFileDefaultName);
-      linkElement.click();
+      const url = URL.createObjectURL(downloadBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
-      toast.success('Ride data exported successfully');
+      toast.success('Compressed ride data exported');
     } catch (error) {
-      console.error('Error exporting ride data:', error);
-      toast.error('Failed to export ride data');
+      console.error('Export error:', error);
+      toast.error('Failed to export data');
     }
   };
 
@@ -262,6 +319,8 @@ export const useRideData = () => {
   return {
     rides,
     currentRide,
+    isCompressing,
+    lastCompressedBlob,
     startRide,
     updateRideData,
     endRide,

@@ -10,9 +10,10 @@ interface RideStatsProps {
   ride: RideSession;
   stats: RideStatsType;
   onExport: () => void;
+  isCompressing?: boolean;
 }
 
-const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
+const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompressing }) => {
   const [showGraphs, setShowGraphs] = useState(false);
 
   const formatDuration = (durationInSeconds: number): string => {
@@ -129,9 +130,9 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport }) => {
               <BarChart2 className="h-4 w-4 mr-2" />
               {showGraphs ? 'Hide Graphs' : 'Show Graphs'}
             </Button>
-            <Button onClick={onExport}>
+            <Button onClick={onExport} disabled={isCompressing}>
               <Download className="h-4 w-4 mr-2" />
-              Export Data
+              {isCompressing ? 'Compressing...' : 'Export Data (ZIP)'}
             </Button>
           </div>
         </CardFooter>
