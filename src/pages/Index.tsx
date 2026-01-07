@@ -12,7 +12,7 @@ import { motion } from 'framer-motion';
 
 const Index = () => {
   const navigate = useNavigate();
-  const { 
+  const {
     isTracking,
     currentData,
     dataPoints,
@@ -20,42 +20,46 @@ const Index = () => {
     startTracking,
     stopTracking
   } = useMotionSensors();
-  
-  const { 
-    currentRide, 
-    startRide, 
-    updateRideData, 
-    endRide, 
+
+  const {
+    currentRide,
+    startRide,
+    updateRideData,
+    endRide,
     exportRideData,
     getRideStats
   } = useRideData();
-  
+
   const [completedRide, setCompletedRide] = useState<any>(null);
   const intervalRef = useRef<number | null>(null);
-  
+
   useEffect(() => {
     if (isTracking && currentRide) {
       updateRideData(dataPoints);
     }
   }, [isTracking, dataPoints, currentRide, updateRideData]);
-  
-  const handleStartTracking = () => {
-    startRide();
-    
-    const intervalId = startTracking();
+
+  const handleStartTracking = async () => {
+    // Start the ride session first
+
+    // Attempt to start tracking (requests permissions)
+    const intervalId = await startTracking();
+
     if (intervalId) {
+      startRide(); // Only start the ride if we actually got permissions/started tracking
       intervalRef.current = intervalId as unknown as number;
       toast.success('Ride tracking started');
     } else {
-      toast.error('Failed to start tracking');
+      // If it returned false, it means permission denied or error
+      // toast is already handled in startTracking
     }
   };
-  
+
   const handleStopTracking = () => {
     if (intervalRef.current !== null) {
       const finalData = stopTracking(intervalRef.current);
       intervalRef.current = null;
-      
+
       const completed = endRide(finalData);
       if (completed) {
         setCompletedRide(completed);
@@ -63,19 +67,19 @@ const Index = () => {
       }
     }
   };
-  
+
   const handleExport = () => {
     if (completedRide) {
       exportRideData(completedRide);
     }
   };
-  
+
   return (
     <Layout>
       <div className="max-w-md mx-auto">
         <div className="text-center mb-8 animate-fade-in">
           <div className="glass-panel mx-auto mb-6 p-6">
-            <motion.h1 
+            <motion.h1
               className="text-3xl font-semibold text-balance"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -83,7 +87,7 @@ const Index = () => {
             >
               SmartRide
             </motion.h1>
-            <motion.p 
+            <motion.p
               className="text-muted-foreground mt-2"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -92,7 +96,7 @@ const Index = () => {
               Track ride quality during transit
             </motion.p>
           </div>
-          
+
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -105,9 +109,9 @@ const Index = () => {
               hasRequiredSensors={hasAccelerometer}
             />
           </motion.div>
-          
+
           {isTracking && currentData && (
-            <motion.div 
+            <motion.div
               className="mt-6 animate-fade-in"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -128,21 +132,21 @@ const Index = () => {
             </motion.div>
           )}
         </div>
-        
+
         {completedRide && !isTracking && (
-          <motion.div 
+          <motion.div
             className="mt-8"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
             <h2 className="text-xl font-medium mb-4 text-center">Last Ride Summary</h2>
-            <RideStats 
-              ride={completedRide} 
+            <RideStats
+              ride={completedRide}
               stats={getRideStats(completedRide)}
               onExport={handleExport}
             />
-            
+
             <div className="mt-6 text-center">
               <button
                 onClick={() => navigate('/history')}
@@ -153,9 +157,9 @@ const Index = () => {
             </div>
           </motion.div>
         )}
-        
+
         {!isTracking && !completedRide && (
-          <motion.div 
+          <motion.div
             className="flex flex-col items-center justify-center text-center px-4 py-8 glass-panel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
