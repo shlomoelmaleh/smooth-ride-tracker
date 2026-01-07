@@ -223,11 +223,12 @@ export const useRideData = () => {
   // Start a new ride session
   const startRide = async () => {
     const timestamp = Date.now();
-    const randomNum = Math.floor(Math.random() * 10000000000);
+    const randomSuffix = Math.random().toString(36).substring(2, 7);
+    const rideId = `${timestamp}-${randomSuffix}`;
     const startBattery = await getBatteryLevel();
 
     const newRide: RideSession = {
-      id: (timestamp + randomNum).toString(),
+      id: rideId,
       startTime: timestamp,
       endTime: null,
       dataPoints: [],

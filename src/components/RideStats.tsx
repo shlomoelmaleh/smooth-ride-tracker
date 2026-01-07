@@ -121,7 +121,10 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
                   <p className="text-[10px] text-amber-500 font-medium">⚠️ GPS data may be duplicated (low update rate)</p>
                 )}
                 {ride.metadata.qualityFlags.hasLowGpsQuality && (
-                  <p className="text-[10px] text-amber-500 font-medium">⚠️ Low GPS quality detected (inaccurate or jumps)</p>
+                  <p className="text-[10px] text-amber-500 font-medium">⚠️ Low GPS quality: {ride.metadata.qualityFlags.gpsQualityReason}</p>
+                )}
+                {ride.metadata.qualityFlags.dataIntegrity.hasGaps && (
+                  <p className="text-[10px] text-red-500 font-medium">❌ Signal integrity: {ride.metadata.qualityFlags.dataIntegrity.gapCount} gaps detected</p>
                 )}
                 {ride.metadata.qualityFlags.isStationaryLikely && (
                   <p className="text-[10px] text-blue-500 font-medium">ℹ️ Ride appears to be stationary</p>
