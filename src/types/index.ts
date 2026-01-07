@@ -20,10 +20,17 @@ export interface LocationData {
   timestamp: number;
 }
 
+export interface EarthAcceleration {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface RideDataPoint {
   accelerometer: AccelerometerData;
   gyroscope: GyroscopeData | null;
   location: LocationData | null;
+  earth: EarthAcceleration | null;
   timestamp: number;
 }
 

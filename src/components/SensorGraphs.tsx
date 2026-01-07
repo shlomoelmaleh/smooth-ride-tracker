@@ -131,6 +131,57 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
         </Card>
       )}
 
+      {dataPoints.some(p => p.earth !== null) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Earth-Relative Acceleration</CardTitle>
+            <CardDescription>Acceleration transformed to Earth Frame (Neutralized tilt)</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="h-[400px] px-4 py-6">
+              <ChartContainer
+                config={{
+                  ex: { theme: { light: '#ef4444', dark: '#ef4444' } },
+                  ey: { theme: { light: '#22c55e', dark: '#22c55e' } },
+                  ez: { theme: { light: '#3b82f6', dark: '#3b82f6' } },
+                }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={dataPoints.filter((_, i) => i % sampleRate === 0).map((p, i) => ({
+                      index: i,
+                      ex: p.earth?.x,
+                      ey: p.earth?.y,
+                      ez: p.earth?.z
+                    }))}
+                    margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="index"
+                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
+                      tick={false}
+                      axisLine={{ strokeWidth: 1.5 }}
+                    />
+                    <YAxis
+                      label={{ value: 'm/s²', angle: -90, position: 'insideLeft', offset: 15 }}
+                      width={60}
+                      axisLine={{ strokeWidth: 1.5 }}
+                      tickMargin={10}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Legend verticalAlign="top" height={40} />
+                    <Line type="monotone" dataKey="ex" name="Vertical (Z)" stroke="var(--color-ex)" dot={false} />
+                    <Line type="monotone" dataKey="ey" name="Lateral (Y)" stroke="var(--color-ey)" dot={false} />
+                    <Line type="monotone" dataKey="ez" name="Longitudinal (X)" stroke="var(--color-ez)" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {dataPoints.some(p => p.location !== null) && (
         <Card>
           <CardHeader>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AccelerometerData, GyroscopeData, LocationData, RideDataPoint } from '@/types';
 import { toast } from 'sonner';
+import { calculateEarthAcceleration } from '@/utils/motionMath';
 
 export const useMotionSensors = () => {
   const [isTracking, setIsTracking] = useState(false);
@@ -113,10 +114,15 @@ export const useMotionSensors = () => {
       timestamp: Date.now()
     };
 
+    const earthAcceleration = lastKnownGyroscopeRef.current
+      ? calculateEarthAcceleration(accelerometerData, lastKnownGyroscopeRef.current)
+      : null;
+
     const newDataPoint: RideDataPoint = {
       accelerometer: accelerometerData,
       gyroscope: lastKnownGyroscopeRef.current, // Will be updated if gyro event fires
       location: lastKnownLocationRef.current, // Use cached location
+      earth: earthAcceleration,
       timestamp: Date.now()
     };
 
