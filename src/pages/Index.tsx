@@ -113,7 +113,7 @@ const Index = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              SmartRide <span className="text-xs font-mono font-normal opacity-50">v0.3.0</span>
+              SmartRide <span className="text-xs font-mono font-normal opacity-50">v0.3.1</span>
             </motion.h1>
             <motion.p
               className="text-muted-foreground mt-2"

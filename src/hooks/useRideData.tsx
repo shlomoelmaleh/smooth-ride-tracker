@@ -309,6 +309,29 @@ export const useRideData = () => {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }, [exportResult]);
 
+  // Delete a ride
+  const deleteRide = async (rideId: string) => {
+    try {
+      await deleteRideData(rideId);
+      setRides(prev => prev.filter(ride => ride.id !== rideId));
+      toast.success('Ride deleted');
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete ride');
+    }
+  };
+
+  // Clear all rides
+  const clearAllRides = async () => {
+    try {
+      await clearAllData();
+      setRides([]);
+      toast.success('All history cleared');
+    } catch (error) {
+      toast.error('Failed to clear history');
+    }
+  };
+
   // Get stats for a ride (from metadata)
   const getRideStats = useCallback((ride: RideSession): RideStats => {
     const meta = ride.metadata;
@@ -325,7 +348,7 @@ export const useRideData = () => {
     }
 
     return {
-      averageAcceleration: meta.statsSummary?.maxAbsAccel || 0, // Fallback to max since avg isn't direct in meta yet
+      averageAcceleration: meta.statsSummary?.maxAbsAccel || 0, // Using maxAbsAccel as approximation
       maxAcceleration: meta.statsSummary?.maxAbsAccel || 0,
       suddenStops: meta.qualityFlags?.dataIntegrity?.gapCount || 0,
       suddenAccelerations: 0,
@@ -334,29 +357,6 @@ export const useRideData = () => {
       distance: meta.statsSummary?.gpsDistanceMeters || 0
     };
   }, []);
-
-  // Delete a ride
-  const deleteRide = async (rideId: string) => {
-    try {
-      await deleteRideData(rideId);
-      setRides(prev => prev.filter(ride => ride.id !== rideId));
-      toast.success('Ride deleted');
-    } catch (error) {
-      console.error('Delete error:', error);
-      toast.error('Failed to delete ride');
-    }
-  };
-
-  // Clear all
-  const clearAllRides = async () => {
-    try {
-      await clearAllData();
-      setRides([]);
-      toast.success('All history cleared');
-    } catch (error) {
-      toast.error('Failed to clear history');
-    }
-  };
 
   return {
     rides,
@@ -370,7 +370,7 @@ export const useRideData = () => {
     deleteRide,
     clearAllRides,
     initiateExport,
-    exportRideData: initiateExport, // Alias for component compatibility
+    exportRideData: initiateExport,
     downloadExport,
     getRideStats,
     updateAggregatorWithSample,
