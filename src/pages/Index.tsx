@@ -2,30 +2,42 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import RideButton from '@/components/RideButton';
+import LiveCharts from '@/components/LiveCharts';
+import DebugOverlay from '@/components/DebugOverlay';
 import { useMotionSensors } from '@/hooks/useMotionSensors';
 import { useRideData } from '@/hooks/useRideData';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Bug, Download, History as HistoryIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const Index = () => {
   const navigate = useNavigate();
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
   const {
     isTracking,
     sampleCount,
     gpsCount,
+    rollingBuffer,
     motionStatus,
     gpsStatus,
-    hasAccelerometer,
     startTracking,
     requestPermissions,
   } = useMotionSensors();
 
   const {
+    currentRide,
     startRide,
     saveChunk,
     endRide,
     updateAggregatorWithSample,
-    updateAggregatorWithGps
+    updateAggregatorWithGps,
+    storageError,
+    chunksFlushed,
+    exportStatus,
+    exportResult,
+    initiateExport,
+    downloadExport
   } = useRideData();
 
   const [completedRide, setCompletedRide] = useState<any>(null);
@@ -36,205 +48,135 @@ const Index = () => {
   useEffect(() => {
     if (isTracking) {
       setElapsedSeconds(0);
-      timerRef.current = window.setInterval(() => {
-        setElapsedSeconds(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      timerRef.current = window.setInterval(() => setElapsedSeconds(prev => prev + 1), 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isTracking]);
 
   const formatElapsedTime = (seconds: number): string => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
+    const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return [
-      hrs.toString().padStart(2, '0'),
-      mins.toString().padStart(2, '0'),
-      secs.toString().padStart(2, '0')
-    ].join(':');
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleStartTracking = async () => {
+  const handleStart = async () => {
     setCompletedRide(null);
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    const ok = await requestPermissions();
+    if (!ok) return;
 
-    const rideId = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
-    // 1. START SENSORS FIRST (Synchronous as possible)
+    const rideId = `${Date.now()}`;
     const stopTracking = await startTracking(
       (chunk, index) => saveChunk(rideId, chunk, index),
-      (gpsUpdate) => updateAggregatorWithGps(gpsUpdate),
-      (sample) => updateAggregatorWithSample(sample)
+      updateAggregatorWithGps,
+      updateAggregatorWithSample
     );
 
     if (stopTracking) {
       stopTrackingRef.current = stopTracking;
-      // 2. Init Storage (Async Background)
-      startRide(rideId).catch(err => {
-        console.error('Storage lazy init deferred:', err);
-      });
-      toast.success('Recording session started');
+      await startRide(rideId);
+      toast.success('Recording...');
     }
   };
 
-  const handleFinalStop = async () => {
+  const handleStop = async () => {
     if (stopTrackingRef.current) {
-      const stopFn = stopTrackingRef.current;
+      stopTrackingRef.current();
       stopTrackingRef.current = null;
-      stopFn(); // Triggers sensor detach and final chunk flush
-
       const completed = await endRide([]);
       if (completed) {
         setCompletedRide(completed);
-        toast.success('Ride saved successfully');
+        initiateExport(completed);
       }
     }
   };
 
   return (
     <Layout>
-      <div className="max-w-md mx-auto">
-        <div className="text-center mb-8 animate-fade-in">
-          <div className="glass-panel mx-auto mb-6 p-6">
-            <motion.h1
-              className="text-3xl font-semibold text-balance"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              SmartRide <span className="text-xs font-mono font-normal opacity-50">v0.3.5</span>
-            </motion.h1>
-            <motion.p
-              className="text-muted-foreground mt-2"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              Absolute Stability Build
-            </motion.p>
+      <div className="max-w-md mx-auto relative min-h-full flex flex-col pt-4">
+        {/* Header Area */}
+        <div className="flex justify-between items-center mb-8 px-2">
+          <div className="flex flex-col">
+            <h1 className="text-2xl font-bold tracking-tight">SmartRide</h1>
+            <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest opacity-60">Build 0.4.0 (Stable)</span>
           </div>
-
-          <div className="flex justify-center gap-3 mb-8 text-[10px] font-bold uppercase tracking-widest">
-            <div className={`px-3 py-1 rounded-full border ${motionStatus === 'active' ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-muted border-transparent opacity-50'}`}>
-              Motion: {motionStatus}
-            </div>
-            <div className={`px-3 py-1 rounded-full border ${gpsStatus === 'active' ? 'bg-blue-500/10 border-blue-500/30 text-blue-500' : 'bg-muted border-transparent opacity-50'}`}>
-              GPS: {gpsStatus}
-            </div>
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3, delay: 0.2 }}
-          >
-            <RideButton
-              isTracking={isTracking}
-              onStart={handleStartTracking}
-              onStop={handleFinalStop}
-              hasRequiredSensors={hasAccelerometer}
-            />
-          </motion.div>
-
-          {isTracking && (
-            <motion.div
-              className="mt-8 animate-fade-in"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="text-center mb-6">
-                <p className="text-sm text-muted-foreground mb-1">Live Telemetry</p>
-                <p className="text-5xl font-mono font-bold text-primary tracking-tight">
-                  {formatElapsedTime(elapsedSeconds)}
-                </p>
-              </div>
-
-              <div className="glass-panel p-5 grid grid-cols-2 gap-4 rounded-2xl bg-primary/5 border-primary/10">
-                <div className="text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">Samples Received</p>
-                  <p className={`text-2xl font-mono font-bold ${sampleCount > 0 ? 'text-green-500' : 'text-amber-500 animate-pulse'}`}>
-                    {sampleCount}
-                  </p>
-                </div>
-                <div className="text-center border-l border-border/50">
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">GPS Points</p>
-                  <p className={`text-2xl font-mono font-bold ${gpsCount > 0 ? 'text-blue-500' : 'text-primary'}`}>
-                    {gpsCount}
-                  </p>
-                </div>
-              </div>
-
-              {sampleCount === 0 && (
-                <div className="mt-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-600 font-medium">
-                  <strong>Still no data?</strong> Ensure your phone is held flat or moved slightly. If on iOS, check <u>Settings &gt; Safari &gt; Motion &amp; Orientation</u>.
-                </div>
-              )}
-            </motion.div>
-          )}
+          <Button variant="ghost" size="sm" onClick={() => setIsDebugOpen(true)} className="rounded-full h-8 w-8 p-0 border border-primary/10">
+            <Bug size={14} className={storageError ? 'text-red-500' : 'text-primary'} />
+          </Button>
         </div>
 
-        <AnimatePresence>
-          {completedRide && !isTracking && (
-            <motion.div
-              className="mt-8 text-center"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="bg-green-500/5 p-8 rounded-3xl border border-green-500/20 shadow-lg shadow-green-500/5">
-                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 text-white">
-                  ✓
+        {/* Main Interface */}
+        <div className="flex-1 flex flex-col">
+          <AnimatePresence mode="wait">
+            {isTracking ? (
+              <motion.div key="recording" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-8">
+                <div className="text-center py-6">
+                  <p className="text-6xl font-mono font-bold tracking-tighter tabular-nums drop-shadow-sm">
+                    {formatElapsedTime(elapsedSeconds)}
+                  </p>
+                  <div className="flex items-center justify-center gap-2 mt-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Live Session</span>
+                  </div>
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Ride Captured</h2>
-                <p className="text-muted-foreground text-sm mb-6">
-                  {completedRide.metadata?.statsSummary?.accelSamples || 0} accelerations recorded over {completedRide.duration?.toFixed(1) || 0}s.
-                </p>
-                <button
-                  onClick={() => navigate('/history')}
-                  className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold shadow-xl hover:bg-primary/90 transition-all hover:scale-[1.02]"
-                >
-                  OPEN HISTORY
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
-        {!isTracking && !completedRide && (
-          <motion.div
-            className="flex flex-col items-center justify-center text-center px-4 py-8 glass-panel shadow-inner"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <h2 className="text-lg font-bold mb-1 text-primary">Stability Build v0.3.5</h2>
-            <p className="text-[10px] uppercase tracking-tighter text-muted-foreground mb-6">Optimized Sensor Pipeline</p>
-            <div className="text-xs text-muted-foreground text-left space-y-4 max-w-[280px]">
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">1</div>
-                <p><strong>Sync-Binding:</strong> Zero-latency attachment to hardware listeners.</p>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">2</div>
-                <p><strong>Fallback Stream:</strong> Monitors both gravity and linear motion buffers.</p>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">3</div>
-                <p><strong>Hardware Pulse:</strong> Live visual status of sensor authorization and data flow.</p>
-              </div>
-            </div>
-          </motion.div>
-        )}
+                <div className="px-2">
+                  <LiveCharts data={rollingBuffer} />
+                </div>
+
+                <div className="flex justify-center pt-8">
+                  <RideButton isTracking={true} onStart={() => { }} onStop={handleStop} hasRequiredSensors={true} />
+                </div>
+              </motion.div>
+            ) : completedRide ? (
+              <motion.div key="completed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pt-4 px-2">
+                <div className="glass-panel p-8 text-center rounded-3xl border-primary/20 shadow-2xl">
+                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Download className="text-primary" />
+                  </div>
+                  <h2 className="text-2xl font-bold mb-2">Ride Finished</h2>
+                  <p className="text-sm text-muted-foreground mb-8">Data persisted locally. {completedRide.metadata?.statsSummary?.accelSamples || 0} points collected.</p>
+
+                  <div className="space-y-3">
+                    <Button onClick={downloadExport} disabled={!exportResult} className="w-full h-14 rounded-2xl font-bold text-lg shadow-lg">
+                      {exportStatus === 'reading' || exportStatus === 'zipping' ? 'Compressing...' : 'DOWNLOAD DATA'}
+                    </Button>
+                    <Button variant="outline" onClick={() => navigate('/history')} className="w-full h-14 rounded-2xl font-semibold border-primary/20">
+                      VIEW FULL HISTORY
+                    </Button>
+                    <Button variant="link" onClick={() => setCompletedRide(null)} className="w-full text-xs opacity-50">RECORD ANOTHER RIDE</Button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12 py-12">
+                <div className="flex justify-center">
+                  <RideButton isTracking={false} onStart={handleStart} onStop={() => { }} hasRequiredSensors={true} />
+                </div>
+
+                <div className="glass-panel mx-4 p-6 rounded-2xl border-dashed border-primary/20 flex flex-col items-center text-center">
+                  <HistoryIcon className="text-muted-foreground mb-3 opacity-30" size={32} />
+                  <p className="text-xs text-muted-foreground max-w-[200px]">Stable MVP: Local storage & verified CSV/JSON export enabled.</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Diagnostic Panel (Always injected but hidden) */}
+        <DebugOverlay isOpen={isDebugOpen} onClose={() => setIsDebugOpen(false)} state={{
+          isTracking,
+          motionStatus,
+          gpsStatus,
+          rideId: currentRide?.id || 'none',
+          chunksFlushed,
+          storageError,
+          exportStatus,
+          samples: sampleCount,
+          gpsPoints: gpsCount
+        }} />
       </div>
     </Layout>
   );
