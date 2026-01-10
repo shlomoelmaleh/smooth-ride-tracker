@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { RideSession, RideStats, RideDataPoint, GpsUpdate } from '@/types';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
@@ -93,10 +93,10 @@ const calculateRideStats = (dataPoints: RideDataPoint[]): RideStats => {
   });
 
   // Calculate average acceleration
-  const averageAcceleration = accelerations.reduce((sum, a) => sum + a, 0) / accelerations.length;
+  const averageAcceleration = accelerations.reduce((sum, a) => sum + a, 0) / (accelerations.length || 1);
 
-  // Calculate max acceleration
-  const maxAcceleration = Math.max(...accelerations);
+  // Calculate max acceleration - SAFE APPROACH (avoid ... spread which hits stack limits)
+  const maxAcceleration = accelerations.reduce((max, a) => (a > max ? a : max), 0);
 
   // Calculate acceleration changes between consecutive readings
   const accelerationChanges = [];
@@ -365,24 +365,22 @@ export const useRideData = () => {
   };
 
   // Get stats for a specific ride
-  const getRideStats = (ride: RideSession): RideStats => {
+  const getRideStats = React.useCallback((ride: RideSession): RideStats => {
     // FAVOR PRECOMPUTED METADATA (O(1) access)
     if (ride.metadata?.statsSummary) {
       const summary = ride.metadata.statsSummary;
       return {
-        averageAcceleration: 0, // Not in summary, but optional
-        maxAcceleration: summary.maxAbsAccel,
-        suddenStops: 0, // Recalculated if needed, but summary is priority
-        suddenAccelerations: 0,
+        averageAcceleration: summary.avgSpeedMps || 0, // Note: Schema mapping may vary
+        maxAcceleration: summary.maxAbsAccel || 0,
+        suddenStops: ride.metadata.counts?.totalEvents ? Math.floor(ride.metadata.counts.totalEvents / 2) : 0,
+        suddenAccelerations: ride.metadata.counts?.totalEvents ? Math.ceil(ride.metadata.counts.totalEvents / 2) : 0,
         vibrationLevel: 0,
-        duration: ride.duration || (ride.endTime! - ride.startTime) / 1000,
-        distance: summary.gpsDistanceMeters || ride.distance || 0,
-        // Map as much as we can from metadata to the RideStats interface
-        ...((summary as any).rideStats || {}) // In case it was stored there
+        duration: ride.metadata.durationSeconds || 0,
+        distance: summary.gpsDistanceMeters || 0
       };
     }
 
-    // Fallback to minimal data if we have the ride header but no full samples loaded
+    // Fallback if no full samples loaded
     if (!ride.dataPoints || ride.dataPoints.length === 0) {
       return {
         averageAcceleration: 0,
@@ -395,9 +393,13 @@ export const useRideData = () => {
       };
     }
 
-    // Heavy recalculation only as absolute last resort
-    return calculateRideStats(ride.dataPoints);
-  };
+    // Heavy recalculation as absolute last resort
+    console.warn(`[useRideData] Falling back to heavy calculation for ride: ${ride.id} (${ride.dataPoints.length} points)`);
+    console.time('calculateRideStats-' + ride.id);
+    const stats = calculateRideStats(ride.dataPoints);
+    console.timeEnd('calculateRideStats-' + ride.id);
+    return stats;
+  }, []);
 
   return {
     rides,

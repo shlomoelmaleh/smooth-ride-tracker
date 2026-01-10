@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import RideHistory from '@/components/RideHistory';
@@ -19,26 +19,39 @@ const History = () => {
     getRideStats
   } = useRideData();
 
-  const [selectedRide, setSelectedRide] = useState<RideSession | null>(null);
+  // 1. SELECT BY ID ONLY (Avoid passing massive objects through state)
+  const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
 
-  const handleViewDetails = (ride: RideSession) => {
+  // 2. MEMOIZE LOOKUP
+  const selectedRide = React.useMemo(() => {
+    if (!selectedRideId) return null;
+    return rides.find(r => r.id === selectedRideId) || null;
+  }, [selectedRideId, rides]);
+
+  // 3. MEMOIZE STATS
+  const selectedRideStats = React.useMemo(() => {
+    if (!selectedRide) return null;
+    return getRideStats(selectedRide);
+  }, [selectedRide, getRideStats]);
+
+  const handleViewDetails = React.useCallback((ride: RideSession) => {
     console.time('ViewDetails-Total');
     console.log('[History] Opening details for ride:', ride.id);
-    setSelectedRide(ride);
-  };
+    setSelectedRideId(ride.id);
+  }, []);
 
-  const handleDelete = (rideId: string) => {
+  const handleDelete = React.useCallback((rideId: string) => {
     deleteRide(rideId);
-    if (selectedRide?.id === rideId) {
-      setSelectedRide(null);
+    if (selectedRideId === rideId) {
+      setSelectedRideId(null);
     }
-  };
+  }, [deleteRide, selectedRideId]);
 
-  const handleExport = () => {
+  const handleExport = React.useCallback(() => {
     if (selectedRide) {
       exportRideData(selectedRide);
     }
-  };
+  }, [selectedRide, exportRideData]);
 
   return (
     <Layout>
@@ -71,7 +84,7 @@ const History = () => {
         />
       </motion.div>
 
-      <Dialog open={!!selectedRide} onOpenChange={(open) => !open && setSelectedRide(null)}>
+      <Dialog open={!!selectedRideId} onOpenChange={(open) => !open && setSelectedRideId(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Ride Details</DialogTitle>
@@ -80,16 +93,16 @@ const History = () => {
             </DialogDescription>
           </DialogHeader>
 
-          {selectedRide && (
+          {selectedRide && selectedRideStats && (
             <RideStats
               ride={selectedRide}
-              stats={getRideStats(selectedRide)}
+              stats={selectedRideStats}
               onExport={handleExport}
             />
           )}
 
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setSelectedRide(null)}>
+            <Button variant="outline" onClick={() => setSelectedRideId(null)}>
               Close
             </Button>
           </DialogFooter>

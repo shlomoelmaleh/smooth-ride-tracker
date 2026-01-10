@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { RideSession, RideStats } from '@/types';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -156,4 +156,4 @@ const RideHistory: React.FC<RideHistoryProps> = ({
   );
 };
 
-export default RideHistory;
+export default React.memo(RideHistory);
