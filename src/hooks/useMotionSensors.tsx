@@ -69,6 +69,16 @@ export const useMotionSensors = () => {
         hasGyroscopeRefIndex.current = true;
       }
 
+      if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+        const orientationState = await (DeviceOrientationEvent as any).requestPermission();
+        if (orientationState === 'granted') {
+          setHasGyroscope(true);
+          hasGyroscopeRefIndex.current = true;
+        } else {
+          toast.warning('Gyroscope permission denied');
+        }
+      }
+
       if ('wakeLock' in navigator) {
         try {
           wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
@@ -253,4 +263,3 @@ export const useMotionSensors = () => {
     requestPermissions
   };
 };
-
