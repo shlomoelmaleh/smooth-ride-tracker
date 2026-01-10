@@ -1,4 +1,4 @@
-import { RideSession, RideDataPoint, GpsUpdate, RideAggregator } from '../types';
+import { RideSession, RideDataPoint, GpsUpdate } from '../types';
 import pkg from '../../package.json';
 import { validateMetadata, ValidationResult } from './metadataValidator';
 
@@ -299,7 +299,7 @@ function getDeviceInfo() {
 /**
  * Helper: Haversine distance between two points in meters
  */
-export function getHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+function getHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371e3;
     const p1 = lat1 * Math.PI / 180;
     const p2 = lat2 * Math.PI / 180;
@@ -466,27 +466,24 @@ function generateSummaryI18n(meta: Partial<RideMetadata>): { key: string; he: st
  */
 export function buildRideMetadata(
     ride: RideSession,
-    aggregator?: RideAggregator,
     appVersion: string = PKG_VERSION
 ): RideMetadata {
-    const { startTime, endTime, dataPoints = [], gpsUpdates = [] } = ride;
+    const { startTime, endTime, dataPoints, gpsUpdates = [] } = ride;
     const startEpochMs = startTime;
     const endEpochMs = endTime || Date.now();
     const durationMs = endEpochMs - startEpochMs;
     const durationSec = Math.max(0.001, durationMs / 1000);
 
     // Raw counts
-    const accelSamples = aggregator ? aggregator.counts.accelSamples : dataPoints.length;
-    const gyroSamples = aggregator ? aggregator.counts.gyroSamples : dataPoints.filter(p => !!p.gyroscope).length;
-    const actualGpsUpdates = aggregator ? aggregator.counts.gpsUpdates : gpsUpdates.length;
-    const gpsSnapshots = aggregator ? aggregator.counts.gpsSnapshots : dataPoints.filter(p => !!p.location).length;
+    const accelSamples = dataPoints.length;
+    const gyroSamples = dataPoints.filter(p => !!p.gyroscope).length;
+    const actualGpsUpdates = gpsUpdates.length;
+    const gpsSnapshots = dataPoints.filter(p => !!p.location).length;
 
     // Sampling explanation fields
     const warmupSamplesDropped = 0; // TODO: Implement warmup detection
-    const firstGpsFixDelayMs = aggregator
-        ? (aggregator.firstGpsFixTimestamp ? aggregator.firstGpsFixTimestamp - startEpochMs : null)
-        : (actualGpsUpdates > 0 ? gpsUpdates[0].timestamp - startEpochMs : null);
-    const permissionDelayMs = null;
+    const firstGpsFixDelayMs = actualGpsUpdates > 0 ? gpsUpdates[0].timestamp - startEpochMs : null;
+    const permissionDelayMs = null; // TODO: Track permission request timing
 
     // Hz computation
     const accelHz = Number((accelSamples / durationSec).toFixed(2));
@@ -502,95 +499,69 @@ export function buildRideMetadata(
     }
 
     // Data Integrity
-    let gapCount = 0;
-    let integrity: any = null;
-    if (aggregator) {
-        gapCount = aggregator.gapCount;
-    } else {
-        const minGapMs = 150;
-        integrity = checkDataIntegrity(dataPoints, accelHz, 2.0, minGapMs, 5000);
-        gapCount = integrity.gapCount;
-    }
+    const minGapMs = 150;
+    const integrity = checkDataIntegrity(dataPoints, accelHz, 2.0, minGapMs, 5000);
 
     // Device Info
     const { osName, osMajor, osVersionFull, browserName, browserMajor, browserVersionFull } = getDeviceInfo();
 
     // Signal Statistics
-    let maxAbsAccel = 0;
-    let p95Accel: number | null = null;
-    let p99Accel: number | null = null;
-    let phoneStability: "stable" | "mixed" | "unstable" | "unknown" = "unknown";
+    const accelMagnitudes = dataPoints.map(p => {
+        const acc = p.earth || p.accelerometer;
+        return Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+    });
 
-    if (aggregator) {
-        maxAbsAccel = aggregator.maxAbsAccel;
-        // Reservoir sort
-        const sortedReservoir = [...aggregator.absAccelReservoir].sort((a, b) => a - b);
-        if (sortedReservoir.length > 0) {
-            p95Accel = sortedReservoir[Math.floor(sortedReservoir.length * 0.95)];
-            p99Accel = sortedReservoir[Math.floor(sortedReservoir.length * 0.99)];
-            phoneStability = calculatePhoneStability(sortedReservoir);
-        }
-    } else {
-        const accelMagnitudes = dataPoints.map(p => {
-            const acc = p.earth || p.accelerometer;
-            return Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-        });
-        maxAbsAccel = accelMagnitudes.length > 0 ? Math.max(...accelMagnitudes) : 0;
-        p95Accel = calculatePercentile(accelMagnitudes, 95);
-        p99Accel = calculatePercentile(accelMagnitudes, 99);
-        phoneStability = calculatePhoneStability(accelMagnitudes);
-    }
+    const maxAbsAccel = accelMagnitudes.length > 0 ? Math.max(...accelMagnitudes) : 0;
+    const p95Accel = calculatePercentile(accelMagnitudes, 95);
+    const p99Accel = calculatePercentile(accelMagnitudes, 99);
+    const phoneStability = calculatePhoneStability(accelMagnitudes);
 
     // Distance & Speed with GPS quality evidence
     let totalDistanceMeters = 0;
-    let avgSpeedMps = 0;
     let hasLowGpsQuality = false;
     let gpsQualityReason: RideMetadata['qualityFlags']['gpsQualityReason'] = 'unknown';
     let avgAccuracyMeters = 0;
     let maxJumpMeters = 0;
     let unrealisticSpeedCount = 0;
 
-    if (aggregator) {
-        totalDistanceMeters = aggregator.gpsDistanceMeters;
-        avgSpeedMps = aggregator.counts.gpsUpdates > 0 ? aggregator.totalSpeedMps / aggregator.counts.gpsUpdates : 0;
-        // Simplified quality check for aggregator
-        if (aggregator.stationaryLikely) {
-            gpsQualityReason = 'low-accuracy'; // or special reason
-        }
-        if (aggregator.counts.gpsUpdates >= 3) gpsQualityReason = 'good';
-        else if (aggregator.counts.gpsUpdates === 0) gpsQualityReason = 'no-fix';
-
-    } else if (actualGpsUpdates >= 2) {
+    if (actualGpsUpdates >= 2) {
         let totalAccuracy = 0;
         for (let i = 1; i < actualGpsUpdates; i++) {
             const p1 = gpsUpdates[i - 1];
             const p2 = gpsUpdates[i];
+
             totalAccuracy += p2.accuracy;
+
             if (p2.accuracy > 50) {
                 hasLowGpsQuality = true;
                 gpsQualityReason = 'low-accuracy';
             }
+
             const d = getHaversineDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
             const dt = (p2.timestamp - p1.timestamp) / 1000;
+
             if (d > maxJumpMeters) maxJumpMeters = d;
+
             if (dt > 0 && (d / dt) > 100) {
                 hasLowGpsQuality = true;
                 gpsQualityReason = 'urban-canyon';
                 unrealisticSpeedCount++;
                 continue;
             }
+
             totalDistanceMeters += d;
         }
         avgAccuracyMeters = totalAccuracy / actualGpsUpdates;
-        avgSpeedMps = durationSec > 0 ? totalDistanceMeters / durationSec : 0;
     } else if (actualGpsUpdates === 0 && gpsSnapshots === 0) {
         gpsQualityReason = 'no-fix';
     }
 
-    // Final quality checks
-    if (!aggregator && !hasLowGpsQuality && actualGpsUpdates >= 3) {
+    // Set "good" if no issues detected
+    if (!hasLowGpsQuality && actualGpsUpdates >= 3) {
         gpsQualityReason = 'good';
     }
+
+    const avgSpeedMps = durationSec > 0 ? totalDistanceMeters / durationSec : 0;
 
     // Timezone fields
     const jsTimezoneOffset = new Date().getTimezoneOffset();
@@ -707,12 +678,7 @@ export function buildRideMetadata(
                 unrealisticSpeedCount
             } : undefined,
             phoneStability,
-            dataIntegrity: aggregator ? {
-                hasGaps: aggregator.gapCount > 0,
-                gapCount: aggregator.gapCount,
-                hasDropouts: false, // Simple aggregation doesn't track dropouts yet
-                dropoutCount: 0
-            } : integrity,
+            dataIntegrity: integrity,
         },
         privacy: {
             containsRawGps: actualGpsUpdates > 0,

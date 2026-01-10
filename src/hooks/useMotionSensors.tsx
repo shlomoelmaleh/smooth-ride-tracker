@@ -1,197 +1,305 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { GpsUpdate, RideDataPoint } from '@/types';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { AccelerometerData, GyroscopeData, LocationData, RideDataPoint, GpsUpdate } from '@/types';
 import { toast } from 'sonner';
-import { debugLog } from '@/lib/debugLog';
-
-export type SensorStatus = 'idle' | 'waiting' | 'active' | 'error' | 'denied';
-
-const MAX_ROLLING_BUFFER = 50; // Points for live chart (~2-5 seconds)
+import { calculateEarthAcceleration } from '@/utils/motionMath';
 
 export const useMotionSensors = () => {
   const [isTracking, setIsTracking] = useState(false);
-  const [sampleCount, setSampleCount] = useState(0);
-  const [gpsCount, setGpsCount] = useState(0);
-  const [rollingBuffer, setRollingBuffer] = useState<RideDataPoint[]>([]);
+  const [currentData, setCurrentData] = useState<RideDataPoint | null>(null);
+  const [dataPoints, setDataPoints] = useState<RideDataPoint[]>([]);
+  const dataPointsRef = useRef<RideDataPoint[]>([]);
+  const gpsUpdatesRef = useRef<GpsUpdate[]>([]);
+  const [gpsUpdates, setGpsUpdates] = useState<GpsUpdate[]>([]);
 
-  const [motionStatus, setMotionStatus] = useState<SensorStatus>('idle');
-  const [gpsStatus, setGpsStatus] = useState<SensorStatus>('idle');
+  const hasGyroscopeRefIndex = useRef(false); // Renamed to avoid confusion with value refs
 
   const [hasAccelerometer, setHasAccelerometer] = useState(false);
+  const [hasGyroscope, setHasGyroscope] = useState(false);
   const [hasGeolocation, setHasGeolocation] = useState(false);
 
-  const totalSamplesRef = useRef(0);
-  const rollingRef = useRef<RideDataPoint[]>([]);
-  const watchIdRef = useRef<number | null>(null);
-  const motionHandlerRef = useRef<((event: DeviceMotionEvent) => void) | null>(null);
+  const accelerometerRef = useRef<number | null>(null);
+  const gyroscopeRef = useRef<number | null>(null);
+  const geolocationRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
-    if ('DeviceMotionEvent' in window) setHasAccelerometer(true);
-    if ('geolocation' in navigator) setHasGeolocation(true);
+    // Check for DeviceMotionEvent and DeviceOrientationEvent
+    // IOS 13+ requires permission for these
+    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+      // iOS: We set it to true initially to ENABLE the start button.
+      // If permission is denied later, we will set it to false.
+      setHasAccelerometer(true);
+    } else if ('DeviceMotionEvent' in window) {
+      // Non-iOS (Android/Desktop): capable by default
+      setHasAccelerometer(true);
+    }
 
+    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      // iOS: Wait for permission
+    } else if ('DeviceOrientationEvent' in window) {
+      setHasGyroscope(true);
+      hasGyroscopeRefIndex.current = true;
+    }
+
+    if ('geolocation' in navigator) {
+      setHasGeolocation(true);
+    }
+
+    // Clean up wake lock on unmount
     return () => {
-      if (motionHandlerRef.current) {
-        window.removeEventListener('devicemotion', motionHandlerRef.current, true);
-      }
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(e => console.error('Wake Lock Release Error:', e));
       }
     };
   }, []);
 
   const requestPermissions = async (): Promise<boolean> => {
-    debugLog.log('User requested permissions...');
-    const isChromeIOS = /CriOS/i.test(navigator.userAgent);
-
     try {
-      if (typeof DeviceMotionEvent !== 'undefined' && typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-        setMotionStatus('waiting');
-        const motionRes = await (DeviceMotionEvent as any).requestPermission();
-        debugLog.log(`Motion permission: ${motionRes}`);
-        if (motionRes !== 'granted') {
-          setMotionStatus('denied');
-          toast.error('Motion access denied.');
+      // Handle iOS 13+ permissions FIRST to preserve user gesture
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+        try {
+          const permissionState = await (DeviceMotionEvent as any).requestPermission();
+
+          if (permissionState !== 'granted') {
+            toast.error('Motion permission denied');
+            return false;
+          }
+
+          // On iOS, this single permission covers both Motion and Orientation
+          setHasGyroscope(true);
+          hasGyroscopeRefIndex.current = true;
+        } catch (e) {
+          console.error(e);
+          toast.error('Motion request failed');
           return false;
         }
-        setMotionStatus('active');
-      } else if (isChromeIOS) {
-        debugLog.log('Chrome iOS detected, assuming permission granted (or default)');
-        setMotionStatus('active');
       }
 
-      if (navigator.geolocation) {
-        setGpsStatus('waiting');
-        const geoRes = await new Promise<boolean>((resolve) => {
-          navigator.geolocation.getCurrentPosition(
-            () => resolve(true),
-            (err) => {
-              debugLog.warn(`Geo prompt failed: ${err.message}`);
-              setGpsStatus('error');
-              resolve(true);
-            },
-            { timeout: 5000 }
-          );
-        });
-        if (geoRes) {
-          setGpsStatus('active');
-          debugLog.log('GPS initialized');
+      // Orientation permission handled via Motion on iOS
+
+
+      // Request Wake Lock AFTER motion permissions
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        } catch (err) {
+          console.error('Wake Lock Error:', err);
         }
       }
 
       return true;
-    } catch (error: any) {
-      debugLog.error(`Permission catch: ${error.message}`);
+    } catch (error) {
+      console.error('Permission request error:', error);
       return false;
     }
   };
 
-  const startTracking = useCallback(async (
-    onChunk: (chunk: RideDataPoint[], index: number) => void,
-    onGpsUpdate?: (update: GpsUpdate) => void,
-    onSensorSample?: (sample: RideDataPoint) => void
-  ) => {
-    setIsTracking(true);
-    setSampleCount(0);
-    setGpsCount(0);
-    totalSamplesRef.current = 0;
-    rollingRef.current = [];
-    setRollingBuffer([]);
+  const lastKnownLocationRef = useRef<LocationData | null>(null);
+  const lastKnownGyroscopeRef = useRef<GyroscopeData | null>(null);
 
-    let chunkIndex = 0;
-    let currentChunk: RideDataPoint[] = [];
+  const handleAccelerometerData = useCallback((event: DeviceMotionEvent) => {
+    if (!event.accelerationIncludingGravity) return;
 
-    const handleMotion = (event: DeviceMotionEvent) => {
-      const accel = event.acceleration || event.accelerationIncludingGravity;
-      if (!accel) return;
-
-      const sample: RideDataPoint = {
-        timestamp: Date.now(),
-        accelerometer: {
-          x: accel.x ?? 0,
-          y: accel.y ?? 0,
-          z: accel.z ?? 0,
-          timestamp: Date.now()
-        },
-        gyroscope: null,
-        location: null,
-        earth: null
-      };
-
-      currentChunk.push(sample);
-      totalSamplesRef.current++;
-
-      // Update rolling buffer for charts
-      rollingRef.current.push(sample);
-      if (rollingRef.current.length > MAX_ROLLING_BUFFER) {
-        rollingRef.current.shift();
-      }
-
-      // Update UI state every 10 samples (reduce React churn)
-      if (totalSamplesRef.current % 10 === 0) {
-        setSampleCount(totalSamplesRef.current);
-        setRollingBuffer([...rollingRef.current]);
-      }
-
-      if (onSensorSample) onSensorSample(sample);
-
-      if (currentChunk.length >= 100) {
-        onChunk([...currentChunk], chunkIndex++);
-        currentChunk = [];
-      }
+    const accelerometerData: AccelerometerData = {
+      x: event.accelerationIncludingGravity.x || 0,
+      y: event.accelerationIncludingGravity.y || 0,
+      z: event.accelerationIncludingGravity.z || 0,
+      timestamp: Date.now()
     };
 
-    if (motionHandlerRef.current) {
-      window.removeEventListener('devicemotion', motionHandlerRef.current, true);
-    }
-    motionHandlerRef.current = handleMotion;
-    window.addEventListener('devicemotion', handleMotion, true);
-    debugLog.log('App listeners attached (devicemotion)');
+    const earthAcceleration = lastKnownGyroscopeRef.current
+      ? calculateEarthAcceleration(accelerometerData, lastKnownGyroscopeRef.current)
+      : null;
 
-    if (navigator.geolocation) {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          const update: GpsUpdate = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-            altitude: pos.coords.altitude,
-            speed: pos.coords.speed,
-            heading: pos.coords.heading,
-            timestamp: pos.timestamp
-          };
-          setGpsCount(prev => prev + 1);
-          if (onGpsUpdate) onGpsUpdate(update);
-        },
-        (err) => debugLog.warn(`GPS Stream Error: ${err.message}`),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
-
-    return () => {
-      debugLog.log('Stopping tracking, cleaning up listeners...');
-      if (motionHandlerRef.current) {
-        window.removeEventListener('devicemotion', motionHandlerRef.current, true);
-        motionHandlerRef.current = null;
-      }
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
-      setIsTracking(false);
-      if (currentChunk.length > 0) {
-        onChunk(currentChunk, chunkIndex);
-      }
+    const newDataPoint: RideDataPoint = {
+      accelerometer: accelerometerData,
+      gyroscope: lastKnownGyroscopeRef.current, // Will be updated if gyro event fires
+      location: lastKnownLocationRef.current, // Use cached location
+      earth: earthAcceleration,
+      timestamp: Date.now()
     };
+
+    setCurrentData(prev => ({
+      ...prev,
+      ...newDataPoint,
+    }));
+
+    dataPointsRef.current.push(newDataPoint);
   }, []);
+
+  const handleGyroscopeData = useCallback((event: DeviceOrientationEvent) => {
+    const gyroscopeData: GyroscopeData = {
+      alpha: event.alpha || 0,
+      beta: event.beta || 0,
+      gamma: event.gamma || 0,
+      timestamp: Date.now()
+    };
+
+    // Cache for high-frequency updates
+    lastKnownGyroscopeRef.current = gyroscopeData;
+
+    // Update state without stale check
+    setCurrentData(prev => prev ? {
+      ...prev,
+      gyroscope: gyroscopeData,
+    } : null);
+
+    // Update ref directly
+    if (dataPointsRef.current.length > 0) {
+      const lastIndex = dataPointsRef.current.length - 1;
+      dataPointsRef.current[lastIndex] = {
+        ...dataPointsRef.current[lastIndex],
+        gyroscope: gyroscopeData,
+      };
+    }
+  }, []);
+
+  // Helper to get specific error message
+  const getGeoErrorMessage = (code: number) => {
+    switch (code) {
+      case 1: return 'Location permission denied';
+      case 2: return 'Location unavailable (GPS signal lost)';
+      case 3: return 'Location request timed out';
+      default: return 'Unknown location error';
+    }
+  };
+
+  const setupGeolocation = useCallback(() => {
+    if (!hasGeolocation) return;
+
+    return navigator.geolocation.watchPosition(
+      (position) => {
+        const locationData: LocationData = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          timestamp: Date.now()
+        };
+
+        const trueGpsUpdate: GpsUpdate = {
+          timestamp: Date.now(),
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          speed: position.coords.speed,
+          heading: position.coords.heading
+        };
+
+        // Cache for high-frequency updates
+        lastKnownLocationRef.current = locationData;
+        gpsUpdatesRef.current.push(trueGpsUpdate);
+
+        setCurrentData(prev => prev ? {
+          ...prev,
+          location: locationData,
+        } : null);
+
+        const lastIndex = dataPointsRef.current.length - 1;
+        if (lastIndex >= 0) {
+          dataPointsRef.current[lastIndex] = {
+            ...dataPointsRef.current[lastIndex],
+            location: locationData,
+          };
+        }
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000 // Increased timeout to avoid constant errors, but maximumAge 0 for frequency
+      }
+    );
+  }, [hasGeolocation]);
+
+  const startTracking = useCallback(async () => {
+    // Request permissions first
+    const granted = await requestPermissions();
+    if (!granted) return false;
+
+    if (!hasAccelerometer) {
+      toast.error('Accelerometer not available on this device');
+      return false;
+    }
+
+    dataPointsRef.current = [];
+    gpsUpdatesRef.current = [];
+    setDataPoints([]);
+    setGpsUpdates([]);
+
+    if (hasAccelerometer) {
+      window.addEventListener('devicemotion', handleAccelerometerData);
+    }
+
+    // Use ref to check for gyro support including recently granted permission
+    if (hasGyroscope || hasGyroscopeRefIndex.current) {
+      window.addEventListener('deviceorientation', handleGyroscopeData);
+    }
+
+    if (hasGeolocation) {
+      geolocationRef.current = setupGeolocation() || null;
+    }
+
+    // ... rest of startTracking
+    setIsTracking(true);
+
+    const intervalId = setInterval(() => {
+      setDataPoints([...dataPointsRef.current]);
+      setGpsUpdates([...gpsUpdatesRef.current]);
+    }, 1000);
+
+    return intervalId;
+  }, [
+    hasAccelerometer,
+    hasGyroscope,
+    hasGeolocation,
+    handleAccelerometerData,
+    handleGyroscopeData,
+    setupGeolocation,
+    requestPermissions // Added dependency
+  ]);
+
+  const stopTracking = useCallback((intervalId: number) => {
+    window.removeEventListener('devicemotion', handleAccelerometerData);
+
+    // Use ref here too just to be safe, though state should have updated by now
+    if (hasGyroscope || hasGyroscopeRefIndex.current) {
+      window.removeEventListener('deviceorientation', handleGyroscopeData);
+    }
+
+    if (geolocationRef.current !== null && hasGeolocation) {
+      navigator.geolocation.clearWatch(geolocationRef.current);
+    }
+
+    // Release wake lock
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().then(() => {
+        wakeLockRef.current = null;
+      }).catch(e => console.error(e));
+    }
+
+    clearInterval(intervalId);
+
+    setDataPoints([...dataPointsRef.current]);
+    setGpsUpdates([...gpsUpdatesRef.current]);
+    setIsTracking(false);
+
+    return {
+      dataPoints: dataPointsRef.current,
+      gpsUpdates: gpsUpdatesRef.current
+    };
+  }, [handleAccelerometerData, handleGyroscopeData, hasGeolocation]);
 
   return {
     isTracking,
-    sampleCount,
-    gpsCount,
-    rollingBuffer,
-    motionStatus,
-    gpsStatus,
+    currentData,
+    dataPoints,
+    gpsUpdates,
     hasAccelerometer,
+    hasGyroscope,
+    hasGeolocation,
     startTracking,
-    requestPermissions
+    stopTracking
   };
 };

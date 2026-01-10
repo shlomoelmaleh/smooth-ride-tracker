@@ -1,240 +1,385 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { RideSession, RideStats, RideDataPoint, GpsUpdate, RideChunk, RideAggregator } from '@/types';
+import { useState, useEffect, useCallback } from 'react';
+import { RideSession, RideStats, RideDataPoint, GpsUpdate } from '@/types';
 import { toast } from 'sonner';
-import { buildRideMetadata, validateAndNormalizeMetadata, getHaversineDistance } from '@/lib/metadata';
-import { computeRideSummaryFromMetadata } from '@/lib/rideStats';
-import { debugLog } from '@/lib/debugLog';
+import JSZip from 'jszip';
+import { buildRideMetadata, validateAndNormalizeMetadata, migrateMetadata } from '@/lib/metadata';
 import {
-  saveRideHeader,
-  getAllRides,
-  deleteRideData,
-  clearAllData,
-  addRideChunk,
-  getRideHeader,
-} from '@/utils/idb';
-import { ExportWorkerMessage, ExportWorkerResponse } from '@/workers/exportWorker';
+  saveRideToDB,
+  getAllRidesFromDB,
+  deleteRideFromDB,
+  clearAllRidesFromDB,
+  migrateFromLocalStorage
+} from '@/lib/storage';
 
-export type ExportStatus = 'idle' | 'reading' | 'zipping' | 'done' | 'error' | 'fallback';
+// Calculate the smoothness score from accelerometer data
+const calculateSmoothnessScore = (dataPoints: RideDataPoint[]): number => {
+  if (dataPoints.length === 0) return 0;
 
-const createInitialAggregator = (): RideAggregator => ({
-  counts: { accelSamples: 0, gyroSamples: 0, gpsUpdates: 0, gpsSnapshots: 0, totalEvents: 0 },
-  maxAbsAccel: 0,
-  absAccelReservoir: [],
-  reservoirSize: 2000,
-  gpsDistanceMeters: 0,
-  totalSpeedMps: 0,
-  gapCount: 0,
-  lastSensorTimestamp: null,
-  stationaryLikely: false,
-  firstGpsFixTimestamp: null,
-  lastGpsUpdate: null,
-});
+  // Calculate the variance of acceleration magnitude
+  const accelerations = dataPoints.map(point => {
+    // If we have earth-relative data, use it (it's tilt-neutralized)
+    const data = point.earth || point.accelerometer;
+    const { x, y, z } = data;
+    // Magnitude of acceleration vector
+    return Math.sqrt(x * x + y * y + z * z);
+  });
+
+  // Calculate mean
+  const mean = accelerations.reduce((sum, a) => sum + a, 0) / accelerations.length;
+
+  // Calculate variance
+  const variance = accelerations.reduce((sum, a) => sum + Math.pow(a - mean, 2), 0) / accelerations.length;
+
+  // Calculate standard deviation
+  const stdDev = Math.sqrt(variance);
+
+  // Convert to a 0-100 score (lower stdDev means smoother ride)
+  const baseScore = 100 - (stdDev * 10);
+
+  // Clamp between 0-100
+  return Math.max(0, Math.min(100, baseScore));
+};
+
+// Calculate distance from GPS points using Haversine formula
+const calculateDistance = (dataPoints: RideDataPoint[]): number => {
+  const pointsWithLocation = dataPoints.filter(point => point.location !== null);
+
+  if (pointsWithLocation.length < 2) return 0;
+
+  let totalDistance = 0;
+
+  for (let i = 1; i < pointsWithLocation.length; i++) {
+    const prevPoint = pointsWithLocation[i - 1].location!;
+    const currPoint = pointsWithLocation[i].location!;
+
+    // Haversine formula
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = prevPoint.latitude * Math.PI / 180;
+    const φ2 = currPoint.latitude * Math.PI / 180;
+    const Δφ = (currPoint.latitude - prevPoint.latitude) * Math.PI / 180;
+    const Δλ = (currPoint.longitude - prevPoint.longitude) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    const distance = R * c;
+    totalDistance += distance;
+  }
+
+  return totalDistance;
+};
+
+// Calculate ride stats
+const calculateRideStats = (dataPoints: RideDataPoint[]): RideStats => {
+  if (dataPoints.length === 0) {
+    return {
+      averageAcceleration: 0,
+      maxAcceleration: 0,
+      suddenStops: 0,
+      suddenAccelerations: 0,
+      vibrationLevel: 0,
+      duration: 0,
+      distance: 0
+    };
+  }
+
+  // Extract acceleration magnitudes
+  const accelerations = dataPoints.map(point => {
+    const data = point.earth || point.accelerometer;
+    const { x, y, z } = data;
+    return Math.sqrt(x * x + y * y + z * z);
+  });
+
+  // Calculate average acceleration
+  const averageAcceleration = accelerations.reduce((sum, a) => sum + a, 0) / accelerations.length;
+
+  // Calculate max acceleration
+  const maxAcceleration = Math.max(...accelerations);
+
+  // Calculate acceleration changes between consecutive readings
+  const accelerationChanges = [];
+  for (let i = 1; i < accelerations.length; i++) {
+    accelerationChanges.push(accelerations[i] - accelerations[i - 1]);
+  }
+
+  // Define thresholds for sudden changes
+  const SUDDEN_DECELERATION_THRESHOLD = -2; // m/s²
+  const SUDDEN_ACCELERATION_THRESHOLD = 2; // m/s²
+
+  // Count sudden stops and accelerations
+  const suddenStops = accelerationChanges.filter(change => change < SUDDEN_DECELERATION_THRESHOLD).length;
+  const suddenAccelerations = accelerationChanges.filter(change => change > SUDDEN_ACCELERATION_THRESHOLD).length;
+
+  // Calculate vibration level (standard deviation of acceleration)
+  const mean = averageAcceleration;
+  const variance = accelerations.reduce((sum, a) => sum + Math.pow(a - mean, 2), 0) / accelerations.length;
+  const vibrationLevel = Math.sqrt(variance);
+
+  // Calculate duration
+  const startTime = dataPoints[0].timestamp;
+  const endTime = dataPoints[dataPoints.length - 1].timestamp;
+  const duration = (endTime - startTime) / 1000; // in seconds
+
+  // Calculate distance
+  const distance = calculateDistance(dataPoints);
+
+  return {
+    averageAcceleration,
+    maxAcceleration,
+    suddenStops,
+    suddenAccelerations,
+    vibrationLevel,
+    duration,
+    distance
+  };
+};
+
+// Helper to get battery level safely
+const getBatteryLevel = async (): Promise<number | undefined> => {
+  try {
+    if ('getBattery' in navigator) {
+      const battery: any = await (navigator as any).getBattery();
+      return battery.level;
+    }
+    return undefined;
+  } catch (error) {
+    console.warn('Battery API error:', error);
+    return undefined;
+  }
+};
 
 export const useRideData = () => {
   const [rides, setRides] = useState<RideSession[]>([]);
   const [currentRide, setCurrentRide] = useState<RideSession | null>(null);
-  const [exportStatus, setExportStatus] = useState<ExportStatus>('idle');
-  const [exportProgress, setExportProgress] = useState(0);
-  const [exportResult, setExportResult] = useState<{ blob: Blob, filename: string } | null>(null);
-  const [storageError, setStorageError] = useState(false);
-  const [chunksFlushed, setChunksFlushed] = useState(0);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [lastCompressedBlob, setLastCompressedBlob] = useState<Blob | null>(null);
+  const [lastCompressedFilename, setLastCompressedFilename] = useState<string>('');
 
-  const workerRef = useRef<Worker | null>(null);
-  const aggregatorRef = useRef<RideAggregator>(createInitialAggregator());
-  const fallbackRef = useRef<RideDataPoint[]>([]);
-
+  // Load rides from storage on mount
   useEffect(() => {
     const initStorage = async () => {
       try {
-        const dbRides = await getAllRides();
+        // 1. Try migration first
+        await migrateFromLocalStorage();
+
+        // 2. Load from DB
+        const dbRides = await getAllRidesFromDB();
         setRides(dbRides);
-      } catch (err: any) {
-        debugLog.error(`IDB Init Error: ${err.message}`);
+      } catch (error) {
+        console.error('Error initialization storage:', error);
+        // Fallback to localStorage if something really broke
+        try {
+          const storedRides = localStorage.getItem('smartRideData');
+          if (storedRides) setRides(JSON.parse(storedRides));
+        } catch (e) { }
       }
     };
+
     initStorage();
-    return () => { if (workerRef.current) workerRef.current.terminate(); };
   }, []);
 
-  const handleWorkerMessage = useCallback((e: MessageEvent<ExportWorkerResponse>) => {
-    const { type } = e.data;
-    if (type === 'PROGRESS') {
-      setExportStatus(e.data.stage as ExportStatus);
-      setExportProgress(e.data.percent);
-    } else if (type === 'SUCCESS') {
-      const { bytes, filename, mime } = e.data;
-      setExportResult({ blob: new Blob([bytes], { type: mime }), filename });
-      setExportStatus('done');
-      debugLog.log(`Worker Success: ${filename}`);
-    } else if (type === 'ERROR') {
-      debugLog.error(`Worker Error: ${e.data.message}`);
-      setExportStatus('error');
-      // Triggering fallback logic elsewhere
+  // Generate filename for ride
+  const generateFilename = (ride: RideSession, extension = 'json') => {
+    const date = new Date(ride.startTime);
+    const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19).replace('T', '_');
+    const shortId = ride.id.slice(-5);
+    return `smartride_${timestamp}_${shortId}.${extension}`;
+  };
+
+  // Helper to compress ride data
+  const compressRideData = async (ride: RideSession): Promise<{ blob: Blob, filename: string } | null> => {
+    try {
+      setIsCompressing(true);
+      const zip = new JSZip();
+
+      // Original ride data as ride.json
+      const jsonContent = JSON.stringify(ride, null, 2);
+      zip.file('ride.json', jsonContent);
+
+      // Metadata as meta.json (migrate and validate if needed)
+      let metadata = ride.metadata;
+      if (!metadata) {
+        metadata = buildRideMetadata(ride);
+      } else if (metadata.schemaVersion !== "1.3") {
+        metadata = migrateMetadata(metadata);
+      }
+      metadata = validateAndNormalizeMetadata(metadata);
+      zip.file('meta.json', JSON.stringify(metadata, null, 2));
+
+      const zipFilename = generateFilename(ride, 'zip');
+
+      const blob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 9 }
+      });
+
+      return { blob, filename: zipFilename };
+    } catch (error) {
+      console.error('Compression error:', error);
+      toast.error('Failed to compress ride data');
+      return null;
+    } finally {
+      setIsCompressing(false);
     }
-  }, []);
+  };
 
-  const startRide = async (overrideId?: string) => {
-    const rideId = overrideId || `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    aggregatorRef.current = createInitialAggregator();
-    fallbackRef.current = [];
-    setChunksFlushed(0);
-    setStorageError(false);
+  // Start a new ride session
+  const startRide = async () => {
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 7);
+    const rideId = `${timestamp}-${randomSuffix}`;
+    const startBattery = await getBatteryLevel();
 
     const newRide: RideSession = {
       id: rideId,
-      startTime: Date.now(),
+      startTime: timestamp,
       endTime: null,
       dataPoints: [],
-      storage: { chunkCount: 0, estimatedBytes: 0, actualBytesStored: 0, bytesWritten: 0, avgChunkBytes: 0, isFinalized: false }
+      startBattery: startBattery
     };
 
-    try {
-      await saveRideHeader(newRide);
-      debugLog.log(`Ride Header Saved: ${rideId}`);
-    } catch (err: any) {
-      setStorageError(true);
-      debugLog.error(`Header Save Failed: ${err.message}`);
-    }
-
-    setExportResult(null);
-    setExportStatus('idle');
+    setLastCompressedBlob(null);
+    setLastCompressedFilename('');
     setCurrentRide(newRide);
     return newRide;
   };
 
-  const saveChunk = useCallback(async (rideId: string, chunkData: RideDataPoint[], index: number) => {
-    // Keep a small fallback buffer of the last samples just in case
-    fallbackRef.current = [...fallbackRef.current, ...chunkData].slice(-500);
+  // Update the current ride with new data points
+  const updateRideData = (dataPoints: RideDataPoint[]) => {
+    if (!currentRide) return;
 
-    const ndjson = chunkData.map(p => JSON.stringify(p)).join('\n') + '\n';
-    const bytes = new TextEncoder().encode(ndjson).length;
+    setCurrentRide(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        dataPoints: dataPoints
+      };
+    });
+  };
 
-    try {
-      await addRideChunk({ rideId, chunkIndex: index, createdAtEpochMs: Date.now(), format: 'ndjson', byteLength: bytes, data: ndjson });
-      setChunksFlushed(prev => prev + 1);
-
-      setCurrentRide(prev => {
-        if (!prev || prev.id !== rideId) return prev;
-        const newBytes = prev.storage!.actualBytesStored + bytes;
-        const updated = { ...prev, storage: { ...prev.storage!, chunkCount: index + 1, actualBytesStored: newBytes, bytesWritten: prev.storage!.bytesWritten + bytes } };
-        saveRideHeader(updated).catch(() => { });
-        return updated;
-      });
-    } catch (err: any) {
-      setStorageError(true);
-      debugLog.error(`Chunk ${index} Write Error: ${err.message}`);
-    }
-  }, []);
-
-  const endRide = async (_unusedGps: GpsUpdate[]) => {
+  // End the current ride and save it
+  const endRide = async (dataPoints: RideDataPoint[], gpsUpdates: GpsUpdate[]) => {
     if (!currentRide) return null;
-    const endTime = Date.now();
-    const duration = (endTime - currentRide.startTime) / 1000;
-    const agg = aggregatorRef.current;
 
-    const finalizedRide: RideSession = {
+    const endTime = Date.now();
+    const distance = calculateDistance(dataPoints);
+    const smoothnessScore = calculateSmoothnessScore(dataPoints);
+    const duration = (endTime - currentRide.startTime) / 1000; // in seconds
+    const endBattery = await getBatteryLevel();
+
+    const completedRide: RideSession = {
       ...currentRide,
       endTime,
+      dataPoints,
+      gpsUpdates,
+      smoothnessScore,
+      distance,
       duration,
-      storage: { ...currentRide.storage!, isFinalized: true }
+      endBattery: endBattery
     };
 
-    const rawMetadata = buildRideMetadata(finalizedRide, agg);
-    finalizedRide.metadata = validateAndNormalizeMetadata(rawMetadata);
-    finalizedRide.distance = finalizedRide.metadata.statsSummary.gpsDistanceMeters;
-    const maxAccel = finalizedRide.metadata.statsSummary.maxAbsAccel || 0;
-    finalizedRide.smoothnessScore = Math.max(0, Math.min(100, 100 - (maxAccel * 5)));
+    // Build and validate metadata
+    const rawMetadata = buildRideMetadata(completedRide);
+    completedRide.metadata = validateAndNormalizeMetadata(rawMetadata);
 
+    // Save to DB
     try {
-      await saveRideHeader(finalizedRide);
-      debugLog.log(`Ride Finalized: ${finalizedRide.id}`);
-    } catch (err: any) {
-      debugLog.error(`Final Wrap Failed: ${err.message}`);
+      await saveRideToDB(completedRide);
+    } catch (error) {
+      console.error('DB Save error:', error);
+      toast.error('Failed to persist ride to database');
     }
 
-    setRides(prev => [...prev.filter(r => r.id !== finalizedRide.id), finalizedRide]);
+    setRides(prev => [...prev, completedRide]);
     setCurrentRide(null);
-    return finalizedRide;
+
+    // Initial background compression
+    const result = await compressRideData(completedRide);
+    if (result) {
+      setLastCompressedBlob(result.blob);
+      setLastCompressedFilename(result.filename);
+    }
+
+    return completedRide;
   };
 
-  /**
-   * FALLBACK: Generate NDJSON on main thread if ZIP fails
-   */
-  const initiateFallbackExport = async (ride: RideSession) => {
-    setExportStatus('fallback');
-    debugLog.warn('Initiating Fallback NDJSON export...');
+  // Delete a specific ride
+  const deleteRide = async (rideId: string) => {
     try {
-      // In a real fallback, we'd try to fetch all chunks from IDB here
-      // but for "Immediate Fallback" we'll use the rolling ref or cached metadata
-      const content = `{"rideId":"${ride.id}","fallback":true,"note":"ZIP worker failed or data partial"}\n`;
-      const blob = new Blob([content], { type: 'application/x-ndjson' });
-      setExportResult({ blob, filename: `ride-${ride.id}-fallback.ndjson` });
-      setExportStatus('done');
-    } catch (err: any) {
-      setExportStatus('error');
-      debugLog.error(`Fallback failed: ${err.message}`);
+      await deleteRideFromDB(rideId);
+      setRides(prev => prev.filter(ride => ride.id !== rideId));
+      toast.success('Ride deleted');
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete ride');
     }
   };
 
-  const initiateExport = useCallback(async (ride: RideSession) => {
-    setExportResult(null);
-    setExportStatus('reading');
-
-    if (!workerRef.current) {
-      workerRef.current = new Worker(new URL('../workers/exportWorker.ts', import.meta.url), { type: 'module' });
-      workerRef.current.onmessage = handleWorkerMessage;
-      workerRef.current.onerror = (err) => {
-        debugLog.error('Worker crash detected');
-        initiateFallbackExport(ride);
-      };
+  // Clear all history
+  const clearAllRides = async () => {
+    try {
+      await clearAllRidesFromDB();
+      setRides([]);
+      toast.success('All ride history cleared');
+    } catch (error) {
+      console.error('Clear error:', error);
+      toast.error('Failed to clear history');
     }
+  };
 
-    const header = ride.metadata ? ride : await getRideHeader(ride.id);
-    if (!header?.metadata) {
-      debugLog.error('No metadata for export');
-      return initiateFallbackExport(ride);
-    }
+  // Export ride data
+  const exportRideData = async (ride: RideSession) => {
+    try {
+      let downloadBlob: Blob;
+      let filename: string;
 
-    debugLog.log(`Starting Export Worker for ${ride.id}`);
-    workerRef.current.postMessage({ type: 'START', rideId: ride.id, metadata: header.metadata });
-
-    // Safety Timeout: If no success in 15 seconds, offer fallback
-    setTimeout(() => {
-      if (exportStatus !== 'done' && exportStatus !== 'idle') {
-        debugLog.warn('Export taking too long, fallback ready.');
-        initiateFallbackExport(ride);
+      if (lastCompressedBlob && generateFilename(ride, 'zip') === lastCompressedFilename) {
+        // Use pre-compressed blob if available
+        downloadBlob = lastCompressedBlob;
+        filename = lastCompressedFilename;
+      } else {
+        // Fallback to on-demand compression (e.g., for history items)
+        const result = await compressRideData(ride);
+        if (!result) return;
+        downloadBlob = result.blob;
+        filename = result.filename;
       }
-    }, 15000);
-  }, [handleWorkerMessage, exportStatus]);
 
-  const downloadExport = useCallback(() => {
-    if (!exportResult) return;
-    const url = URL.createObjectURL(exportResult.blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = exportResult.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  }, [exportResult]);
+      const url = URL.createObjectURL(downloadBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success('Compressed ride data exported');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export data');
+    }
+  };
+
+  // Get stats for a specific ride
+  const getRideStats = (ride: RideSession): RideStats => {
+    return calculateRideStats(ride.dataPoints);
+  };
 
   return {
-    rides, currentRide, exportStatus, exportProgress, exportResult, storageError, chunksFlushed,
-    startRide, saveChunk, endRide, initiateExport, downloadExport,
-    deleteRide: (id: string) => deleteRideData(id).then(() => setRides(r => r.filter(x => x.id !== id))),
-    getRideStats: (r: RideSession) => computeRideSummaryFromMetadata(r.metadata!),
-    updateAggregatorWithSample: (s: RideDataPoint) => {
-      aggregatorRef.current.counts.accelSamples++;
-      const mag = Math.sqrt(s.accelerometer.x ** 2 + s.accelerometer.y ** 2 + s.accelerometer.z ** 2);
-      if (mag > aggregatorRef.current.maxAbsAccel) aggregatorRef.current.maxAbsAccel = mag;
-    },
-    updateAggregatorWithGps: (u: GpsUpdate) => {
-      aggregatorRef.current.counts.gpsUpdates++;
-      if (aggregatorRef.current.lastGpsUpdate) {
-        aggregatorRef.current.gpsDistanceMeters += getHaversineDistance(aggregatorRef.current.lastGpsUpdate.latitude, aggregatorRef.current.lastGpsUpdate.longitude, u.latitude, u.longitude);
-      }
-      aggregatorRef.current.lastGpsUpdate = u;
-    }
+    rides,
+    currentRide,
+    isCompressing,
+    lastCompressedBlob,
+    startRide,
+    updateRideData,
+    endRide,
+    deleteRide,
+    clearAllRides,
+    exportRideData,
+    getRideStats
   };
 };

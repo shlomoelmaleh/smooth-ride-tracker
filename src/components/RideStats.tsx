@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Download, TrendingUp, MapPin, Clock, BarChart2 } from 'lucide-react';
-import type { RideDataPoint, RideSession, RideStats as RideStatsType } from '@/types';
+import type { RideSession, RideStats as RideStatsType } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -10,71 +10,30 @@ interface RideStatsProps {
   ride: RideSession;
   stats: RideStatsType;
   onExport: () => void;
-  onDownload?: () => void;
-  isExportReady?: boolean;
   isCompressing?: boolean;
-  loadRideDataPoints?: (ride: RideSession, maxPoints?: number) => Promise<RideDataPoint[]>;
 }
 
-const RideStats: React.FC<RideStatsProps> = ({
-  ride,
-  stats,
-  onExport,
-  onDownload,
-  isExportReady,
-  isCompressing,
-  loadRideDataPoints
-}) => {
+const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompressing }) => {
   const [showGraphs, setShowGraphs] = useState(false);
-  const [graphDataPoints, setGraphDataPoints] = useState<RideDataPoint[]>(ride.dataPoints ?? []);
-  const [graphStatus, setGraphStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
-  useEffect(() => {
-    setGraphDataPoints(ride.dataPoints ?? []);
-    setGraphStatus('idle');
-    setShowGraphs(false);
-  }, [ride.id, ride.dataPoints]);
-
-  useEffect(() => {
-    if (!showGraphs) return;
-    if (graphDataPoints.length > 0 || graphStatus === 'loading') return;
-    if (!loadRideDataPoints) return;
-
-    let cancelled = false;
-    setGraphStatus('loading');
-
-    loadRideDataPoints(ride, 5000)
-      .then((points) => {
-        if (cancelled) return;
-        setGraphDataPoints(points);
-        setGraphStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setGraphStatus('error');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [graphDataPoints.length, graphStatus, loadRideDataPoints, ride, showGraphs]);
-
-  const formatDuration = (durationInSeconds: number | undefined): string => {
-    if (durationInSeconds === undefined || isNaN(durationInSeconds)) return 'N/A';
+  const formatDuration = (durationInSeconds: number): string => {
     const hours = Math.floor(durationInSeconds / 3600);
     const minutes = Math.floor((durationInSeconds % 3600) / 60);
     const seconds = Math.floor(durationInSeconds % 60);
 
     let formatted = '';
-    if (hours > 0) formatted += `${hours}h `;
-    if (minutes > 0 || hours > 0) formatted += `${minutes}m `;
+    if (hours > 0) {
+      formatted += `${hours}h `;
+    }
+    if (minutes > 0 || hours > 0) {
+      formatted += `${minutes}m `;
+    }
     formatted += `${seconds}s`;
 
-    return formatted || '0s';
+    return formatted;
   };
 
-  const formatDistance = (distanceInMeters: number | undefined): string => {
-    if (distanceInMeters === undefined || isNaN(distanceInMeters)) return 'N/A';
+  const formatDistance = (distanceInMeters: number): string => {
     const distanceInKilometers = distanceInMeters / 1000;
     return `${distanceInKilometers.toFixed(2)} km`;
   };
@@ -90,113 +49,117 @@ const RideStats: React.FC<RideStatsProps> = ({
           <div className="grid gap-2">
             <div className="flex items-center space-x-2">
               <TrendingUp className="h-4 w-4" />
-              <h2 className="text-sm font-semibold">Smoothness</h2>
+              <h2 className="text-sm font-semibold">Smoothness Score</h2>
             </div>
-            <Progress value={ride?.smoothnessScore || 0} />
+            <Progress value={ride.smoothnessScore || 0} />
             <p className="text-sm text-muted-foreground">
-              {ride?.smoothnessScore?.toFixed(0) || 0}%
+              {ride.smoothnessScore?.toFixed(0) || 0}%
             </p>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-1">
-              <div className="flex items-center space-x-2 text-muted-foreground">
-                <MapPin className="h-3 w-3" />
-                <span className="text-[10px] font-semibold uppercase">Distance</span>
-              </div>
-              <p className="text-sm font-medium">
-                {formatDistance(ride?.distance || stats?.distance)}
-              </p>
+          <div className="grid gap-2">
+            <div className="flex items-center space-x-2">
+              <MapPin className="h-4 w-4" />
+              <h2 className="text-sm font-semibold">Distance</h2>
             </div>
-
-            <div className="grid gap-1">
-              <div className="flex items-center space-x-2 text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                <span className="text-[10px] font-semibold uppercase">Duration</span>
-              </div>
-              <p className="text-sm font-medium">
-                {formatDuration(ride?.duration || stats?.duration)}
-              </p>
-            </div>
+            <p className="text-sm">
+              {formatDistance(ride.distance || 0)}
+            </p>
           </div>
-
-          <div className="grid grid-cols-2 gap-y-4 gap-x-8 pt-2 border-t mt-2">
-            <div className="grid gap-0.5">
-              <h3 className="text-[10px] text-muted-foreground uppercase font-bold">Avg Accel</h3>
-              <p className="text-xs">{stats?.averageAcceleration?.toFixed(2) || '0.00'} m/s²</p>
+          <div className="grid gap-2">
+            <div className="flex items-center space-x-2">
+              <Clock className="h-4 w-4" />
+              <h2 className="text-sm font-semibold">Duration</h2>
             </div>
-            <div className="grid gap-0.5">
-              <h3 className="text-[10px] text-muted-foreground uppercase font-bold">Max Accel</h3>
-              <p className="text-xs">{stats?.maxAcceleration?.toFixed(2) || '0.00'} m/s²</p>
-            </div>
-            <div className="grid gap-0.5">
-              <h3 className="text-[10px] text-muted-foreground uppercase font-bold">Sudden Stops</h3>
-              <p className="text-xs">{stats?.suddenStops ?? 0}</p>
-            </div>
-            <div className="grid gap-0.5">
-              <h3 className="text-[10px] text-muted-foreground uppercase font-bold">Vibration</h3>
-              <p className="text-xs">{stats?.vibrationLevel?.toFixed(2) || '0.00'}</p>
-            </div>
+            <p className="text-sm">
+              {formatDuration(ride.duration || 0)}
+            </p>
           </div>
-
-          <div className="pt-4 border-t">
-            <h2 className="text-[10px] uppercase font-bold text-muted-foreground mb-2">Technical Insights</h2>
-            <div className="text-[10px] text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1">
-              <p>ID: <span className="font-mono">{(ride?.id || '').slice(-8)}</span></p>
-              <p>Duration: {ride?.metadata?.durationMs ? (ride.metadata.durationMs / 1000).toFixed(1) + 's' : 'N/A'}</p>
-              <p>Accel: {ride?.metadata?.counts?.accelSamples ?? '0'} ({ride?.metadata?.sampling?.accelerometerHz ?? '0'} Hz)</p>
-              <p>GPS: {ride?.metadata?.counts?.gpsUpdates ?? '0'} ({ride?.metadata?.sampling?.gpsHz ?? '0'} Hz)</p>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Average Acceleration</h2>
+            <p className="text-sm">
+              {stats.averageAcceleration.toFixed(2)} m/s²
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Max Acceleration</h2>
+            <p className="text-sm">
+              {stats.maxAcceleration.toFixed(2)} m/s²
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Sudden Stops</h2>
+            <p className="text-sm">
+              {stats.suddenStops}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Sudden Accelerations</h2>
+            <p className="text-sm">
+              {stats.suddenAccelerations}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Vibration Level</h2>
+            <p className="text-sm">
+              {stats.vibrationLevel.toFixed(2)}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Technical Info</h2>
+            <div className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1">
+              <p>ID: <span className="font-mono">{ride.id.slice(-8)}</span></p>
+              <p>Duration: {ride.metadata?.durationMs ? (ride.metadata.durationMs / 1000).toFixed(1) + 's' : 'N/A'}</p>
+              <p>Accel: {ride.metadata?.counts?.accelSamples ?? '0'} ({ride.metadata?.sampling?.accelerometerHz ?? '0'} Hz)</p>
+              <p>Gyro: {ride.metadata?.counts?.gyroSamples ?? '0'} ({ride.metadata?.sampling?.gyroscopeHz ?? '0'} Hz)</p>
+              <p>GPS Updates: {ride.metadata?.counts?.gpsUpdates ?? '0'} ({ride.metadata?.sampling?.gpsHz ?? '0'} Hz)</p>
+              <p>Dist: {ride.metadata?.statsSummary?.gpsDistanceMeters?.toFixed(1) ?? '0'} m</p>
             </div>
 
-            {ride?.metadata?.qualityFlags && (
-              <div className="mt-3 space-y-1">
+            {ride.metadata?.qualityFlags && (
+              <div className="mt-2 space-y-1">
                 {ride.metadata.qualityFlags.isGpsLikelyDuplicated && (
-                  <p className="text-[10px] text-amber-500 font-medium">⚠️ GPS data may be low resolution</p>
+                  <p className="text-[10px] text-amber-500 font-medium">⚠️ GPS data may be duplicated (low update rate)</p>
                 )}
                 {ride.metadata.qualityFlags.hasLowGpsQuality && (
-                  <p className="text-[10px] text-amber-500 font-medium">⚠️ {ride.metadata.qualityFlags.gpsQualityReason}</p>
+                  <p className="text-[10px] text-amber-500 font-medium">⚠️ Low GPS quality: {ride.metadata.qualityFlags.gpsQualityReason}</p>
                 )}
-                {ride.metadata.qualityFlags.dataIntegrity?.hasGaps && (
-                  <p className="text-[10px] text-red-500 font-medium font-bold">❌ {ride.metadata.qualityFlags.dataIntegrity.gapCount} data gaps detected</p>
+                {ride.metadata.qualityFlags.dataIntegrity.hasGaps && (
+                  <p className="text-[10px] text-red-500 font-medium">❌ Signal integrity: {ride.metadata.qualityFlags.dataIntegrity.gapCount} gaps detected</p>
+                )}
+                {ride.metadata.qualityFlags.isStationaryLikely && (
+                  <p className="text-[10px] text-blue-500 font-medium">ℹ️ Ride appears to be stationary</p>
                 )}
               </div>
             )}
           </div>
+          <div className="grid gap-2">
+            <h2 className="text-sm font-semibold">Battery Impact</h2>
+            <p className="text-sm">
+              {ride.startBattery !== undefined && ride.endBattery !== undefined
+                ? `Used: ${((ride.startBattery - ride.endBattery) * 100).toFixed(1)}%`
+                : 'Not available on this device/browser'}
+            </p>
+          </div>
         </CardContent>
-        <CardFooter className="flex flex-col sm:flex-row gap-3 pt-6 border-t bg-muted/5">
-          <div className="flex gap-2 w-full">
-            <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowGraphs(!showGraphs)}>
-              <BarChart2 className="h-3.5 w-3.5 mr-2" />
-              {showGraphs ? 'Hide Graphs' : 'Graphs'}
+        <CardFooter className="justify-between items-center">
+          <p className="text-sm text-muted-foreground">
+            Recorded on {new Date(ride.startTime).toLocaleDateString()}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowGraphs(!showGraphs)}>
+              <BarChart2 className="h-4 w-4 mr-2" />
+              {showGraphs ? 'Hide Graphs' : 'Show Graphs'}
             </Button>
-            <Button size="sm" className="flex-1" onClick={onExport} disabled={isCompressing}>
-              <Download className="h-3.5 w-3.5 mr-2" />
-              {isCompressing ? 'Zipping...' : 'Export (ZIP)'}
+            <Button onClick={onExport} disabled={isCompressing}>
+              <Download className="h-4 w-4 mr-2" />
+              {isCompressing ? 'Compressing...' : 'Export Data (ZIP)'}
             </Button>
           </div>
-          {isExportReady && onDownload && (
-            <Button variant="secondary" size="sm" className="w-full" onClick={onDownload}>
-              Download ZIP
-            </Button>
-          )}
         </CardFooter>
       </Card>
 
-      {showGraphs && (
-        <>
-          {graphStatus === 'loading' && (
-            <div className="text-xs text-muted-foreground">Loading sensor data…</div>
-          )}
-          {graphStatus === 'error' && (
-            <div className="text-xs text-destructive">Unable to load sensor samples for graphs.</div>
-          )}
-          {graphStatus !== 'loading' && graphDataPoints.length === 0 && (
-            <div className="text-xs text-muted-foreground">No sensor samples available for this ride.</div>
-          )}
-          {graphDataPoints.length > 0 && (
-            <SensorGraphs dataPoints={graphDataPoints} />
-          )}
-        </>
+      {showGraphs && ride.dataPoints.length > 0 && (
+        <SensorGraphs dataPoints={ride.dataPoints} />
       )}
     </div>
   );
