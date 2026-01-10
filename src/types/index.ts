@@ -42,6 +42,7 @@ export interface GpsUpdate {
   accuracy: number;
   speed: number | null;
   heading: number | null;
+  altitude: number | null;
 }
 
 export interface RideChunk {

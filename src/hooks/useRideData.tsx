@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { RideSession, RideStats, RideDataPoint, GpsUpdate, RideChunk, RideAggregator } from '@/types';
 import { toast } from 'sonner';
 import { buildRideMetadata, validateAndNormalizeMetadata, getHaversineDistance } from '@/lib/metadata';
+import { computeRideSummaryFromMetadata } from '@/lib/rideStats';
 import {
   saveRideHeader,
   getAllRides,
@@ -72,7 +73,10 @@ export const useRideData = () => {
       setExportStatus(e.data.stage as ExportStatus);
       setExportProgress(e.data.percent);
     } else if (type === 'SUCCESS') {
-      setExportResult({ blob: e.data.blob, filename: e.data.filename });
+      // CRITICAL for iOS: Create Blob on main thread from bytes
+      const { bytes, filename, mime } = e.data;
+      const blob = new Blob([bytes], { type: mime });
+      setExportResult({ blob, filename });
       setExportStatus('done');
       toast.success('Export assembled successfully');
     } else if (type === 'ERROR') {
@@ -212,7 +216,7 @@ export const useRideData = () => {
   }, []);
 
   // End the current ride
-  const endRide = async (gpsUpdates: GpsUpdate[]) => {
+  const endRide = async (_gpsUpdates: GpsUpdate[]) => {
     if (!currentRide) return null;
 
     const endTime = Date.now();
@@ -250,7 +254,6 @@ export const useRideData = () => {
     // 2b. Pull high-level stats back to header for easy UI access
     finalizedRide.distance = finalizedRide.metadata.statsSummary.gpsDistanceMeters;
     // Simple heuristic for smoothness: 100 - (maxAccel * 5) capped at 0-100
-    // In v1.3 we might want a better formula, but this restores the field.
     const maxAccel = finalizedRide.metadata.statsSummary.maxAbsAccel || 0;
     finalizedRide.smoothnessScore = Math.max(0, Math.min(100, 100 - (maxAccel * 5)));
 
@@ -258,8 +261,6 @@ export const useRideData = () => {
 
     setRides(prev => [...prev.filter(r => r.id !== finalizedRide.id), finalizedRide]);
     setCurrentRide(null);
-
-    // 3. No automatic export initiation anymore
 
     return finalizedRide;
   };
@@ -332,30 +333,9 @@ export const useRideData = () => {
     }
   };
 
-  // Get stats for a ride (from metadata)
+  // Get stats for a ride (using missing module helper)
   const getRideStats = useCallback((ride: RideSession): RideStats => {
-    const meta = ride.metadata;
-    if (!meta) {
-      return {
-        averageAcceleration: 0,
-        maxAcceleration: 0,
-        suddenStops: 0,
-        suddenAccelerations: 0,
-        vibrationLevel: 0,
-        duration: ride.duration || 0,
-        distance: ride.distance || 0
-      };
-    }
-
-    return {
-      averageAcceleration: meta.statsSummary?.maxAbsAccel || 0, // Using maxAbsAccel as approximation
-      maxAcceleration: meta.statsSummary?.maxAbsAccel || 0,
-      suddenStops: meta.qualityFlags?.dataIntegrity?.gapCount || 0,
-      suddenAccelerations: 0,
-      vibrationLevel: meta.statsSummary?.maxAbsAccelContext?.p95 || 0,
-      duration: (meta.durationMs || 0) / 1000,
-      distance: meta.statsSummary?.gpsDistanceMeters || 0
-    };
+    return computeRideSummaryFromMetadata(ride.metadata!);
   }, []);
 
   return {
@@ -377,4 +357,3 @@ export const useRideData = () => {
     updateAggregatorWithGps
   };
 };
-

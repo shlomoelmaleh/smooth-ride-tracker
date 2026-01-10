@@ -11,7 +11,7 @@ export type ExportWorkerMessage =
 
 export type ExportWorkerResponse =
     | { type: 'PROGRESS', stage: string, percent: number }
-    | { type: 'SUCCESS', blob: Blob, filename: string }
+    | { type: 'SUCCESS', bytes: Uint8Array, filename: string, mime: 'application/zip' }
     | { type: 'ERROR', message: string };
 
 self.onmessage = async (e: MessageEvent<ExportWorkerMessage>) => {
@@ -29,7 +29,8 @@ self.onmessage = async (e: MessageEvent<ExportWorkerMessage>) => {
 };
 
 /**
- * Process export using streaming to avoid memory pressure
+ * Process export using streaming to avoid memory pressure.
+ * CRITICAL for iOS: Return Uint8Array instead of Blob to avoid transfer hangs.
  */
 async function processExportStreaming(rideId: string, metadata: RideMetadata): Promise<void> {
     const encoder = new TextEncoder();
@@ -47,8 +48,23 @@ async function processExportStreaming(rideId: string, metadata: RideMetadata): P
                 }
                 zipDataChunks.push(data);
                 if (final) {
-                    const blob = new Blob(zipDataChunks as any, { type: 'application/zip' });
-                    self.postMessage({ type: 'SUCCESS', blob, filename: `ride_${rideId}.zip` });
+                    // Combine chunks into a single Uint8Array for transfer
+                    const totalLength = zipDataChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+                    const result = new Uint8Array(totalLength);
+                    let offset = 0;
+                    for (const chunk of zipDataChunks) {
+                        result.set(chunk, offset);
+                        offset += chunk.length;
+                    }
+
+                    // Post as Success with Transferable bytes
+                    self.postMessage({
+                        type: 'SUCCESS',
+                        bytes: result,
+                        filename: `ride_${rideId}.zip`,
+                        mime: 'application/zip'
+                    }, [result.buffer] as any);
+
                     self.postMessage({ type: 'PROGRESS', stage: 'complete', percent: 100 });
                     resolve();
                 }
@@ -66,7 +82,6 @@ async function processExportStreaming(rideId: string, metadata: RideMetadata): P
 
             let processedChunks = 0;
             // Estimate total chunks from metadata to show progress
-            // Assuming average chunk size is ~120 samples
             const estimatedTotalChunks = Math.max(1, Math.ceil(metadata.counts.accelSamples / 120));
 
             await iterateRideChunks(rideId, (chunk) => {

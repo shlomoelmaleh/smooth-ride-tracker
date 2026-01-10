@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import RideButton from '@/components/RideButton';
@@ -12,16 +12,13 @@ const Index = () => {
   const navigate = useNavigate();
   const {
     isTracking,
-    currentData,
     gpsUpdates,
-    totalSamples,
     hasAccelerometer,
     startTracking,
     requestPermissions,
   } = useMotionSensors();
 
   const {
-    currentRide,
     startRide,
     saveChunk,
     endRide,
@@ -64,8 +61,10 @@ const Index = () => {
     ].join(':');
   };
 
+  /**
+   * CRITICAL for iOS: Permission must be requested in the same tick as the user click.
+   */
   const handleStartTracking = async () => {
-    // CRITICAL for iOS: Permission must be requested in the same tick as the user click.
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
@@ -113,7 +112,7 @@ const Index = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              SmartRide <span className="text-xs font-mono font-normal opacity-50">v0.3.1</span>
+              SmartRide <span className="text-xs font-mono font-normal opacity-50">v0.3.2</span>
             </motion.h1>
             <motion.p
               className="text-muted-foreground mt-2"
@@ -198,7 +197,7 @@ const Index = () => {
               </li>
               <li className="flex items-start">
                 <span className="font-bold text-primary mr-3">✓</span>
-                <p><strong>Web Worker:</strong> ZIP compression won't freeze your screen.</p>
+                <p><strong>Sync-Safe permissions:</strong> iOS Motion/Orientation requested on user gesture.</p>
               </li>
               <li className="flex items-start">
                 <span className="font-bold text-primary mr-3">✓</span>
@@ -207,55 +206,6 @@ const Index = () => {
             </ol>
           </motion.div>
         )}
-
-        {/* Dev Tool: 10-min Simulator */}
-        {process.env.NODE_ENV === 'development' && !isTracking && !completedRide && (
-          <div className="mt-12 p-4 border border-dashed rounded-xl bg-muted/30">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Dev Tools</h3>
-            <button
-              onClick={async () => {
-                const toastId = toast.loading('Simulating 10-min ride...');
-                const ride = await startRide();
-                if (!ride) return;
-
-                // Simulate 10 mins * 60 samples/sec = 36,000 samples
-                const TOTAL_SAMPLES = 36000;
-                const SAMPLES_PER_CHUNK = 120;
-                const numChunks = TOTAL_SAMPLES / SAMPLES_PER_CHUNK;
-
-                for (let i = 0; i < numChunks; i++) {
-                  const chunk: RideDataPoint[] = Array.from({ length: SAMPLES_PER_CHUNK }).map((_, j) => {
-                    const sample = {
-                      timestamp: ride.startTime + (i * SAMPLES_PER_CHUNK + j) * (1000 / 60),
-                      accelerometer: { x: (Math.random() - 0.5) * 2, y: 9.8 + (Math.random() - 0.5), z: (Math.random() - 0.5), timestamp: Date.now() },
-                      gyroscope: null,
-                      location: null,
-                      earth: null
-                    };
-                    updateAggregatorWithSample(sample);
-                    return sample;
-                  });
-                  await saveChunk(ride.id, chunk, i);
-                  if (i % 50 === 0) toast.loading(`Simulating: ${Math.round((i / numChunks) * 100)}%`, { id: toastId });
-                }
-
-                await endRide([]);
-                toast.success('Simulation complete!', { id: toastId });
-              }}
-              className="w-full py-2 text-xs font-semibold bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
-            >
-              SIMULATE 10-MIN RIDE
-            </button>
-            <p className="text-[10px] text-muted-foreground mt-2 text-center">
-              Tests chunking, aggregator, and metadata builder.
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Hidden state tracker for the complex button */}
-      <div style={{ display: 'none' }} id="gps-state-bridge">
-        {JSON.stringify(gpsUpdates)}
       </div>
     </Layout>
   );
