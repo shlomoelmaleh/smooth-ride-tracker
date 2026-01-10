@@ -110,6 +110,70 @@ export const useRideData = () => {
     agg.lastSensorTimestamp = sample.timestamp;
   }, []);
 
+  const calculateStatsFromDataPoints = (dataPoints: RideDataPoint[]): RideStats => {
+    if (!dataPoints.length) {
+      return {
+        averageAcceleration: 0,
+        maxAcceleration: 0,
+        suddenStops: 0,
+        suddenAccelerations: 0,
+        vibrationLevel: 0,
+        duration: 0,
+        distance: 0
+      };
+    }
+
+    const magnitudes = dataPoints.map(point => {
+      const acc = point.earth || point.accelerometer;
+      return Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+    });
+
+    const total = magnitudes.reduce((sum, value) => sum + value, 0);
+    const average = total / magnitudes.length;
+    const max = Math.max(...magnitudes);
+    const variance = magnitudes.reduce((sum, value) => sum + (value - average) ** 2, 0) / magnitudes.length;
+    const vibrationLevel = Math.sqrt(variance);
+
+    let suddenStops = 0;
+    let suddenAccelerations = 0;
+    const suddenThreshold = 3;
+
+    for (let i = 1; i < magnitudes.length; i++) {
+      const delta = magnitudes[i] - magnitudes[i - 1];
+      if (delta > suddenThreshold) suddenAccelerations++;
+      if (delta < -suddenThreshold) suddenStops++;
+    }
+
+    return {
+      averageAcceleration: average,
+      maxAcceleration: max,
+      suddenStops,
+      suddenAccelerations,
+      vibrationLevel,
+      duration: 0,
+      distance: 0
+    };
+  };
+
+  const getRideStats = useCallback((ride: RideSession): RideStats => {
+    const baseStats = calculateStatsFromDataPoints(ride.dataPoints || []);
+    const metadata = ride.metadata;
+
+    return {
+      averageAcceleration: baseStats.averageAcceleration || metadata?.statsSummary?.maxAbsAccelContext?.p95 || 0,
+      maxAcceleration: baseStats.maxAcceleration || metadata?.statsSummary?.maxAbsAccel || 0,
+      suddenStops: baseStats.suddenStops,
+      suddenAccelerations: baseStats.suddenAccelerations,
+      vibrationLevel: baseStats.vibrationLevel || metadata?.statsSummary?.maxAbsAccelContext?.p99 || 0,
+      duration: ride.duration ?? metadata?.durationSeconds ?? 0,
+      distance: ride.distance ?? metadata?.statsSummary?.gpsDistanceMeters ?? 0
+    };
+  }, []);
+
+  const exportRideData = useCallback(async (ride: RideSession) => {
+    await initiateExport(ride);
+  }, [initiateExport]);
+
   const updateAggregatorWithGps = useCallback((update: GpsUpdate) => {
     const agg = aggregatorRef.current;
     agg.counts.gpsUpdates++;
@@ -331,6 +395,8 @@ export const useRideData = () => {
     exportStatus,
     exportProgress,
     exportResult,
+    getRideStats,
+    exportRideData,
     startRide,
     saveChunk,
     endRide,
@@ -342,4 +408,3 @@ export const useRideData = () => {
     updateAggregatorWithGps
   };
 };
-
