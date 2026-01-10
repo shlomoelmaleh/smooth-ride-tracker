@@ -249,7 +249,8 @@ export const useMotionSensors = () => {
     hasAccelerometer,
     hasGyroscope,
     hasGeolocation,
-    startTracking
+    startTracking,
+    requestPermissions
   };
 };
 

@@ -17,6 +17,7 @@ const Index = () => {
     totalSamples,
     hasAccelerometer,
     startTracking,
+    requestPermissions,
   } = useMotionSensors();
 
   const {
@@ -64,6 +65,16 @@ const Index = () => {
   };
 
   const handleStartTracking = async () => {
+    // CRITICAL for iOS: Permission must be requested in the same tick as the user click.
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
+    if (!hasAccelerometer) {
+      toast.error('Accelerometer not discovered. Check permissions or device support.');
+      return;
+    }
+
+    // Now safe to do async DB work
     const ride = await startRide();
     if (!ride) return;
 
