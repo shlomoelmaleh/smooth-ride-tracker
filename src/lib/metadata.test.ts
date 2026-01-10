@@ -7,7 +7,7 @@ import { validateTimezoneInversion, validateGpsRateComputation } from './metadat
  * Can be imported and called in dev mode to verify logic.
  */
 export function runMetadataSanityCheck() {
-    console.log("--- Starting Metadata Sanity Check (v1.3) ---");
+    console.log("--- Starting Metadata Sanity Check (v1.3 Refined) ---");
 
     const mockRide: RideSession = {
         id: "1736282000000-abcde",
@@ -38,6 +38,7 @@ export function runMetadataSanityCheck() {
             { name: "GPS Native Hz", pass: meta.sampling.gps.nativeHz > 0 },
             { name: "GPS Rate Method", pass: meta.sampling.gps.rateEstimateMethod === "updates/duration" },
             { name: "GPS Rate Confidence", pass: meta.sampling.gps.rateConfidence === "low" },
+            { name: "Timezone Nested Structure", pass: !!meta.timezone && typeof meta.timezone.jsTimezoneOffsetMinutes === 'number' },
             { name: "Timezone Inversion", pass: validateTimezoneInversion(meta) },
             { name: "GPS Rate Computation", pass: validateGpsRateComputation(meta) },
             { name: "Expected DtMs", pass: meta.processing.integrityRules.expectedDtMs > 0 },
@@ -47,7 +48,13 @@ export function runMetadataSanityCheck() {
             { name: "GPS Quality Reason Enum", pass: ["good", "urban-canyon", "no-fix", "low-accuracy", "unknown"].includes(meta.qualityFlags.gpsQualityReason) },
             { name: "Phone Stability Enum", pass: ["stable", "mixed", "unstable", "unknown"].includes(meta.qualityFlags.phoneStability) },
             { name: "Privacy Declaration", pass: meta.privacy.intendedUse === "aggregated-analysis-only" },
-            { name: "Display Summary", pass: meta.display.summaryReason.length > 0 }
+            { name: "Display i18n Key", pass: meta.display.summaryReasonKey.length > 0 },
+            { name: "Display i18n Hebrew", pass: meta.display.summaryReasonI18n.he.length > 0 },
+            { name: "Display i18n English", pass: meta.display.summaryReasonI18n.en.length > 0 },
+            { name: "Counts Warmup Field", pass: typeof meta.counts.warmupSamplesDropped === 'number' },
+            { name: "Counts GPS Fix Delay", pass: meta.counts.firstGpsFixDelayMs !== undefined },
+            { name: "Browser Version Full", pass: meta.device.browserVersionFull !== undefined || meta.device.browserName === "Unknown" },
+            { name: "OS Version Full", pass: meta.device.os.versionFull !== undefined || meta.device.os.name === "Unknown" }
         ];
 
         checks.forEach(c => {

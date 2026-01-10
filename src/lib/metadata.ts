@@ -5,6 +5,11 @@ const PKG_VERSION = pkg.version;
 
 /**
  * Metadata Schema v1.3 - Stable Data Contract
+ * 
+ * Timezone Sign Convention:
+ * - jsTimezoneOffsetMinutes: Positive values = West of UTC (e.g., UTC-5 = +300)
+ * - utcOffsetMinutes: Positive values = East of UTC (e.g., UTC+2 = +120)
+ * - Invariant: utcOffsetMinutes = -jsTimezoneOffsetMinutes
  */
 export interface RideMetadata {
     // Core Identity
@@ -20,11 +25,12 @@ export interface RideMetadata {
     durationMs: number;
     durationSeconds: number;
 
-    // Timezone (unambiguous)
-    jsTimezoneOffsetMinutes: number; // JavaScript Date.getTimezoneOffset() value (e.g., Israel = -120)
-    utcOffsetMinutes: number; // Always equal to -jsTimezoneOffsetMinutes (e.g., Israel = +120)
-    /** @deprecated Use jsTimezoneOffsetMinutes or utcOffsetMinutes instead */
-    timezoneOffsetMinutes: number; // Legacy field, same as jsTimezoneOffsetMinutes
+    // Timezone (unambiguous - NO duplicate fields)
+    timezone: {
+        jsTimezoneOffsetMinutes: number; // JavaScript Date.getTimezoneOffset() value (e.g., Israel = -120)
+        utcOffsetMinutes: number; // Always equal to -jsTimezoneOffsetMinutes (e.g., Israel = +120)
+        note: string; // Explanation of sign convention
+    };
 
     // Application
     app: {
@@ -39,9 +45,11 @@ export interface RideMetadata {
         os: {
             name: "iOS" | "Android" | "Windows" | "MacOS" | "Linux" | "Unknown";
             major?: number;
+            versionFull?: string; // e.g., "26.2.0"
         };
         browserName: string;
         browserMajor: number | string;
+        browserVersionFull?: string; // e.g., "143.0.7499.151"
         platform?: string;
         language?: string;
         screen?: {
@@ -76,6 +84,10 @@ export interface RideMetadata {
         gpsUpdates: number;
         gpsSnapshots: number;
         totalEvents: number; // accel + gyro + gpsUpdates
+        // Sampling explanation fields
+        warmupSamplesDropped: number; // Samples dropped during warmup
+        firstGpsFixDelayMs: number | null; // Delay until first GPS fix
+        permissionDelayMs: number | null; // Delay due to permission request
     };
 
     // Derived Ratios
@@ -129,6 +141,13 @@ export interface RideMetadata {
         isStationaryLikely: boolean;
         hasLowGpsQuality: boolean;
         gpsQualityReason: "good" | "urban-canyon" | "no-fix" | "low-accuracy" | "unknown";
+        gpsQualityEvidence?: {
+            // Evidence-based numeric indicators
+            avgAccuracyMeters?: number;
+            maxJumpMeters?: number;
+            avgSpeedMps?: number;
+            unrealisticSpeedCount?: number;
+        };
         phoneStability: "stable" | "mixed" | "unstable" | "unknown";
         dataIntegrity: {
             hasGaps: boolean; // True only if meaningful gaps exist (not 1-sample jitter)
@@ -145,9 +164,25 @@ export interface RideMetadata {
         dataMinimizationNotes: string;
     };
 
-    // UI Display
+    // UI Display (i18n)
     display: {
-        summaryReason: string; // Hebrew-ready summary
+        summaryReasonKey: string; // Stable key for localization
+        summaryReasonI18n: {
+            he: string; // Hebrew text
+            en: string; // English text
+        };
+    };
+
+    // Export Metadata
+    export?: {
+        format: "json" | "zip";
+        files: Array<{
+            name: string;
+            bytes: number;
+            sha256?: string; // Optional if hashing unavailable
+        }>;
+        compressionRatio: number | null;
+        hashUnavailableReason?: string;
     };
 
     notes?: string;
@@ -169,60 +204,92 @@ function calculatePercentile(values: number[], percentile: number): number | nul
 }
 
 /**
- * Helper: Enhanced browser detection (handles iOS Chrome "CriOS")
+ * Helper: Enhanced browser detection with full version strings
  */
 function getDeviceInfo() {
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
 
     let osName: RideMetadata['device']['os']['name'] = 'Unknown';
     let osMajor: number | undefined = undefined;
+    let osVersionFull: string | undefined = undefined;
     let browserName = 'Unknown';
-    let browserVersion: string | number = 'Unknown';
+    let browserMajor: string | number = 'Unknown';
+    let browserVersionFull: string | undefined = undefined;
 
-    // OS detection
+    // OS detection with full version
     if (/iPad|iPhone|iPod/.test(ua)) {
         osName = 'iOS';
-        const match = ua.match(/OS (\d+)_/);
-        if (match) osMajor = parseInt(match[1]);
+        const match = ua.match(/OS (\d+)_(\d+)(?:_(\d+))?/);
+        if (match) {
+            osMajor = parseInt(match[1]);
+            osVersionFull = match[3] ? `${match[1]}.${match[2]}.${match[3]}` : `${match[1]}.${match[2]}.0`;
+        }
     } else if (/Android/.test(ua)) {
         osName = 'Android';
-        const match = ua.match(/Android (\d+)/);
-        if (match) osMajor = parseInt(match[1]);
+        const match = ua.match(/Android (\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+        if (match) {
+            osMajor = parseInt(match[1]);
+            osVersionFull = match[3] ? `${match[1]}.${match[2]}.${match[3]}` :
+                match[2] ? `${match[1]}.${match[2]}.0` : `${match[1]}.0.0`;
+        }
     } else if (/Windows/.test(ua)) {
         osName = 'Windows';
         const match = ua.match(/Windows NT (\d+\.\d+)/);
-        if (match) osMajor = parseFloat(match[1]);
+        if (match) {
+            osMajor = parseFloat(match[1]);
+            osVersionFull = match[1];
+        }
     } else if (/Mac/.test(ua)) {
         osName = 'MacOS';
+        const match = ua.match(/Mac OS X (\d+)[_.](\d+)(?:[_.](\d+))?/);
+        if (match) {
+            osMajor = parseInt(match[1]);
+            osVersionFull = match[3] ? `${match[1]}.${match[2]}.${match[3]}` : `${match[1]}.${match[2]}.0`;
+        }
     } else if (/Linux/.test(ua)) {
         osName = 'Linux';
     }
 
-    // Browser detection (iOS Chrome special case)
+    // Browser detection with full version (iOS Chrome special case)
     if (/CriOS/.test(ua)) {
         // iOS Chrome
-        browserName = 'Chrome';
-        const match = ua.match(/CriOS\/(\d+)/);
-        if (match) browserVersion = parseInt(match[1]);
+        browserName = 'Chrome iOS';
+        const match = ua.match(/CriOS\/([\d.]+)/);
+        if (match) {
+            browserVersionFull = match[1];
+            browserMajor = parseInt(match[1].split('.')[0]);
+        }
     } else if (/Chrome/.test(ua) && !/Edge|Edg|OPR/.test(ua)) {
         browserName = 'Chrome';
-        const match = ua.match(/Chrome\/(\d+)/);
-        if (match) browserVersion = parseInt(match[1]);
+        const match = ua.match(/Chrome\/([\d.]+)/);
+        if (match) {
+            browserVersionFull = match[1];
+            browserMajor = parseInt(match[1].split('.')[0]);
+        }
     } else if (/Safari/.test(ua) && !/Chrome|Android/.test(ua)) {
         browserName = 'Safari';
-        const match = ua.match(/Version\/(\d+)/);
-        if (match) browserVersion = parseInt(match[1]);
+        const match = ua.match(/Version\/([\d.]+)/);
+        if (match) {
+            browserVersionFull = match[1];
+            browserMajor = parseInt(match[1].split('.')[0]);
+        }
     } else if (/Firefox/.test(ua)) {
         browserName = 'Firefox';
-        const match = ua.match(/Firefox\/(\d+)/);
-        if (match) browserVersion = parseInt(match[1]);
+        const match = ua.match(/Firefox\/([\d.]+)/);
+        if (match) {
+            browserVersionFull = match[1];
+            browserMajor = parseInt(match[1].split('.')[0]);
+        }
     } else if (/Edge|Edg/.test(ua)) {
         browserName = 'Edge';
-        const match = ua.match(/Edg?\/(\d+)/);
-        if (match) browserVersion = parseInt(match[1]);
+        const match = ua.match(/Edg?\/([\d.]+)/);
+        if (match) {
+            browserVersionFull = match[1];
+            browserMajor = parseInt(match[1].split('.')[0]);
+        }
     }
 
-    return { osName, osMajor, browserName, browserVersion };
+    return { osName, osMajor, osVersionFull, browserName, browserMajor, browserVersionFull };
 }
 
 /**
@@ -298,50 +365,96 @@ function calculatePhoneStability(accelMagnitudes: number[]): "stable" | "mixed" 
 }
 
 /**
- * Helper: Generate Hebrew UI summary based on quality flags
+ * Helper: Generate i18n summary keys and text based on quality flags
  */
-function generateSummaryReason(meta: Partial<RideMetadata>): string {
+function generateSummaryI18n(meta: Partial<RideMetadata>): { key: string; he: string; en: string } {
     const flags = meta.qualityFlags;
     const stats = meta.statsSummary;
 
-    if (!flags || !stats) return "נסיעה הושלמה בהצלחה";
+    if (!flags || !stats) {
+        return {
+            key: "ride_completed_success",
+            he: "נסיעה הושלמה בהצלחה",
+            en: "Ride completed successfully"
+        };
+    }
 
     // Priority 1: GPS Issues
     if (flags.gpsQualityReason === "no-fix") {
-        return "לא ניתן גישה ל-GPS — נתוני מיקום חסרים";
+        return {
+            key: "gps_no_fix",
+            he: "לא ניתן גישה ל-GPS — נתוני מיקום חסרים",
+            en: "No GPS access — location data missing"
+        };
     }
     if (flags.gpsQualityReason === "urban-canyon") {
-        return "GPS חלש (Urban Canyon) — נתוני מיקום פחות אמינים";
+        return {
+            key: "gps_urban_canyon",
+            he: "GPS חלש (Urban Canyon) — נתוני מיקום פחות אמינים",
+            en: "Weak GPS (Urban Canyon) — less reliable location data"
+        };
     }
     if (flags.gpsQualityReason === "low-accuracy") {
-        return "דיוק GPS נמוך — נתוני מיקום משוערים";
+        return {
+            key: "gps_low_accuracy",
+            he: "דיוק GPS נמוך — נתוני מיקום משוערים",
+            en: "Low GPS accuracy — estimated location data"
+        };
     }
 
     // Priority 2: Data Integrity
     if (flags.dataIntegrity?.dropoutCount && flags.dataIntegrity.dropoutCount > 0) {
-        return `זוהו הפסקות בהקלטה — ${flags.dataIntegrity.dropoutCount} הפסקות`;
+        return {
+            key: "data_dropouts",
+            he: `זוהו הפסקות בהקלטה — ${flags.dataIntegrity.dropoutCount} הפסקות`,
+            en: `Recording dropouts detected — ${flags.dataIntegrity.dropoutCount} dropouts`
+        };
     }
     if (flags.dataIntegrity?.gapCount && flags.dataIntegrity.gapCount > 10) {
-        return `זוהו פערים בנתונים — ${flags.dataIntegrity.gapCount} פערים`;
+        return {
+            key: "data_gaps",
+            he: `זוהו פערים בנתונים — ${flags.dataIntegrity.gapCount} פערים`,
+            en: `Data gaps detected — ${flags.dataIntegrity.gapCount} gaps`
+        };
     }
 
     // Priority 3: Phone Stability
     if (flags.phoneStability === "unstable") {
-        return "הרבה רעידות — ייתכן כביש משובש או טלפון לא יציב";
+        return {
+            key: "phone_unstable",
+            he: "הרבה רעידות — ייתכן כביש משובש או טלפון לא יציב",
+            en: "High vibrations — possibly rough road or unstable phone"
+        };
     }
 
     // Priority 4: Ride Quality
     if (flags.isStationaryLikely) {
-        return "נסיעה נייחת — כמעט ללא תנועה";
+        return {
+            key: "ride_stationary",
+            he: "נסיעה נייחת — כמעט ללא תנועה",
+            en: "Stationary ride — almost no movement"
+        };
     }
     if (stats.maxAbsAccel < 12 && flags.phoneStability === "stable") {
-        return "נסיעה חלקה מאוד, כמעט בלי בלימות חדות";
+        return {
+            key: "ride_very_smooth",
+            he: "נסיעה חלקה מאוד, כמעט בלי בלימות חדות",
+            en: "Very smooth ride, almost no hard braking"
+        };
     }
     if (stats.maxAbsAccel >= 15) {
-        return `נסיעה עם בלימות חדות — ${stats.maxAbsAccel.toFixed(1)} m/s²`;
+        return {
+            key: "ride_hard_braking",
+            he: `נסיעה עם בלימות חדות — ${stats.maxAbsAccel.toFixed(1)} m/s²`,
+            en: `Ride with hard braking — ${stats.maxAbsAccel.toFixed(1)} m/s²`
+        };
     }
 
-    return "נסיעה הושלמה בהצלחה";
+    return {
+        key: "ride_completed_success",
+        he: "נסיעה הושלמה בהצלחה",
+        en: "Ride completed successfully"
+    };
 }
 
 /**
@@ -363,6 +476,11 @@ export function buildRideMetadata(
     const actualGpsUpdates = gpsUpdates.length;
     const gpsSnapshots = dataPoints.filter(p => !!p.location).length;
 
+    // Sampling explanation fields
+    const warmupSamplesDropped = 0; // TODO: Implement warmup detection
+    const firstGpsFixDelayMs = actualGpsUpdates > 0 ? gpsUpdates[0].timestamp - startEpochMs : null;
+    const permissionDelayMs = null; // TODO: Track permission request timing
+
     // Hz computation
     const accelHz = Number((accelSamples / durationSec).toFixed(2));
     const gyroHz = gyroSamples > 0 ? Number((gyroSamples / durationSec).toFixed(2)) : 0;
@@ -381,7 +499,7 @@ export function buildRideMetadata(
     const integrity = checkDataIntegrity(dataPoints, accelHz, 2.0, minGapMs, 5000);
 
     // Device Info
-    const { osName, osMajor, browserName, browserVersion } = getDeviceInfo();
+    const { osName, osMajor, osVersionFull, browserName, browserMajor, browserVersionFull } = getDeviceInfo();
 
     // Signal Statistics
     const accelMagnitudes = dataPoints.map(p => {
@@ -394,15 +512,21 @@ export function buildRideMetadata(
     const p99Accel = calculatePercentile(accelMagnitudes, 99);
     const phoneStability = calculatePhoneStability(accelMagnitudes);
 
-    // Distance & Speed
+    // Distance & Speed with GPS quality evidence
     let totalDistanceMeters = 0;
     let hasLowGpsQuality = false;
     let gpsQualityReason: RideMetadata['qualityFlags']['gpsQualityReason'] = 'unknown';
+    let avgAccuracyMeters = 0;
+    let maxJumpMeters = 0;
+    let unrealisticSpeedCount = 0;
 
     if (actualGpsUpdates >= 2) {
+        let totalAccuracy = 0;
         for (let i = 1; i < actualGpsUpdates; i++) {
             const p1 = gpsUpdates[i - 1];
             const p2 = gpsUpdates[i];
+
+            totalAccuracy += p2.accuracy;
 
             if (p2.accuracy > 50) {
                 hasLowGpsQuality = true;
@@ -412,16 +536,25 @@ export function buildRideMetadata(
             const d = getHaversineDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
             const dt = (p2.timestamp - p1.timestamp) / 1000;
 
+            if (d > maxJumpMeters) maxJumpMeters = d;
+
             if (dt > 0 && (d / dt) > 100) {
                 hasLowGpsQuality = true;
                 gpsQualityReason = 'urban-canyon';
+                unrealisticSpeedCount++;
                 continue;
             }
 
             totalDistanceMeters += d;
         }
+        avgAccuracyMeters = totalAccuracy / actualGpsUpdates;
     } else if (actualGpsUpdates === 0 && gpsSnapshots === 0) {
         gpsQualityReason = 'no-fix';
+    }
+
+    // Set "good" if no issues detected
+    if (!hasLowGpsQuality && actualGpsUpdates >= 3) {
+        gpsQualityReason = 'good';
     }
 
     const avgSpeedMps = durationSec > 0 ? totalDistanceMeters / durationSec : 0;
@@ -441,18 +574,25 @@ export function buildRideMetadata(
         endedAtIso: new Date(endEpochMs).toISOString(),
         durationMs,
         durationSeconds: Number(durationSec.toFixed(3)),
-        jsTimezoneOffsetMinutes: jsTimezoneOffset,
-        utcOffsetMinutes: utcOffset,
-        timezoneOffsetMinutes: jsTimezoneOffset, // Legacy field
+        timezone: {
+            jsTimezoneOffsetMinutes: jsTimezoneOffset,
+            utcOffsetMinutes: utcOffset,
+            note: "jsTimezoneOffsetMinutes: positive = west of UTC; utcOffsetMinutes: positive = east of UTC"
+        },
         app: {
             name: "Smooth Ride Tracker",
             version: appVersion,
         },
         device: {
             userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-            os: { name: osName, major: osMajor },
+            os: {
+                name: osName,
+                major: osMajor,
+                versionFull: osVersionFull
+            },
             browserName,
-            browserMajor: browserVersion,
+            browserMajor,
+            browserVersionFull,
             platform: typeof navigator !== 'undefined' ? (navigator as any).platform : undefined,
             language: typeof navigator !== 'undefined' ? navigator.language : undefined,
             screen: typeof window !== 'undefined' ? {
@@ -482,6 +622,9 @@ export function buildRideMetadata(
             gpsUpdates: actualGpsUpdates,
             gpsSnapshots,
             totalEvents: accelSamples + gyroSamples + actualGpsUpdates,
+            warmupSamplesDropped,
+            firstGpsFixDelayMs,
+            permissionDelayMs
         },
         derivedRatios: {
             gpsReplicationFactor: Number((gpsSnapshots / Math.max(1, actualGpsUpdates)).toFixed(2)),
@@ -523,7 +666,13 @@ export function buildRideMetadata(
             isGpsLikelyDuplicated: gpsSnapshots > 0 && actualGpsUpdates <= Math.max(2, durationSec * 0.1),
             isStationaryLikely: durationSec > 30 && (totalDistanceMeters < 30 || avgSpeedMps < 0.5),
             hasLowGpsQuality: hasLowGpsQuality || (actualGpsUpdates < 3 && durationSec > 60),
-            gpsQualityReason: hasLowGpsQuality ? gpsQualityReason : (actualGpsUpdates >= 3 ? "good" : gpsQualityReason),
+            gpsQualityReason,
+            gpsQualityEvidence: hasLowGpsQuality || actualGpsUpdates >= 2 ? {
+                avgAccuracyMeters: Number(avgAccuracyMeters.toFixed(1)),
+                maxJumpMeters: Number(maxJumpMeters.toFixed(1)),
+                avgSpeedMps: Number(avgSpeedMps.toFixed(2)),
+                unrealisticSpeedCount
+            } : undefined,
             phoneStability,
             dataIntegrity: integrity,
         },
@@ -534,13 +683,16 @@ export function buildRideMetadata(
             dataMinimizationNotes: "No persistent device identifiers (UDID/IMEI) or user accounts are used. Data is stored locally or exported manually by the user.",
         },
         display: {
-            summaryReason: "" // Will be filled by generateSummaryReason
+            summaryReasonKey: "",
+            summaryReasonI18n: { he: "", en: "" }
         },
         notes: ""
     };
 
     // Generate summary after metadata is complete
-    metadata.display.summaryReason = generateSummaryReason(metadata);
+    const summary = generateSummaryI18n(metadata);
+    metadata.display.summaryReasonKey = summary.key;
+    metadata.display.summaryReasonI18n = { he: summary.he, en: summary.en };
 
     return metadata;
 }
@@ -568,10 +720,25 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             meta.endedAtIso = new Date(meta.endEpochMs).toISOString();
         }
 
-        // Validate timezone offset
-        const tzOffset = Number(meta.timezoneOffsetMinutes);
-        if (isNaN(tzOffset) || tzOffset < -720 || tzOffset > 840) {
-            meta.timezoneOffsetMinutes = new Date().getTimezoneOffset();
+        // Migrate old timezone format to new nested structure
+        if (!meta.timezone) {
+            const jsOffset = meta.jsTimezoneOffsetMinutes ?? meta.timezoneOffsetMinutes ?? new Date().getTimezoneOffset();
+            meta.timezone = {
+                jsTimezoneOffsetMinutes: jsOffset,
+                utcOffsetMinutes: -jsOffset,
+                note: "jsTimezoneOffsetMinutes: positive = west of UTC; utcOffsetMinutes: positive = east of UTC"
+            };
+        } else {
+            // Ensure all timezone fields exist
+            if (typeof meta.timezone.jsTimezoneOffsetMinutes === 'undefined') {
+                meta.timezone.jsTimezoneOffsetMinutes = new Date().getTimezoneOffset();
+            }
+            if (typeof meta.timezone.utcOffsetMinutes === 'undefined') {
+                meta.timezone.utcOffsetMinutes = -meta.timezone.jsTimezoneOffsetMinutes;
+            }
+            if (!meta.timezone.note) {
+                meta.timezone.note = "jsTimezoneOffsetMinutes: positive = west of UTC; utcOffsetMinutes: positive = east of UTC";
+            }
         }
 
         // Ensure app info
@@ -585,6 +752,19 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
         if (!meta.device.os) meta.device.os = { name: "Unknown" };
         meta.device.browserName = meta.device.browserName || "Unknown";
         meta.device.browserMajor = meta.device.browserMajor || "Unknown";
+
+        // Ensure counts has new fields
+        if (meta.counts) {
+            if (typeof meta.counts.warmupSamplesDropped === 'undefined') {
+                meta.counts.warmupSamplesDropped = 0;
+            }
+            if (typeof meta.counts.firstGpsFixDelayMs === 'undefined') {
+                meta.counts.firstGpsFixDelayMs = null;
+            }
+            if (typeof meta.counts.permissionDelayMs === 'undefined') {
+                meta.counts.permissionDelayMs = null;
+            }
+        }
 
         // Recompute derived ratios to ensure correctness
         if (meta.counts && meta.durationSeconds > 0) {
@@ -608,6 +788,20 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             }
         }
 
+        // Ensure GPS sampling fields exist
+        if (meta.sampling?.gps) {
+            if (!meta.sampling.gps.rateEstimateMethod) {
+                meta.sampling.gps.rateEstimateMethod = "updates/duration";
+            }
+            if (!meta.sampling.gps.expectedRangeHz) {
+                meta.sampling.gps.expectedRangeHz = [0.2, 1.2];
+            }
+            if (!meta.sampling.gps.rateConfidence) {
+                const gpsUpdates = meta.counts?.gpsUpdates || 0;
+                meta.sampling.gps.rateConfidence = gpsUpdates > 30 ? "high" : gpsUpdates >= 15 ? "medium" : "low";
+            }
+        }
+
         // Ensure totalEvents is correct
         if (meta.counts) {
             const correctTotal = (meta.counts.accelSamples || 0) +
@@ -616,10 +810,14 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             meta.counts.totalEvents = correctTotal;
         }
 
-        // Ensure display.summaryReason exists
-        if (!meta.display) meta.display = {};
-        if (!meta.display.summaryReason) {
-            meta.display.summaryReason = generateSummaryReason(meta);
+        // Migrate old display format to i18n
+        if (meta.display && !meta.display.summaryReasonI18n) {
+            const oldSummary = meta.display.summaryReason || "נסיעה הושלמה בהצלחה";
+            meta.display.summaryReasonKey = "ride_completed_success";
+            meta.display.summaryReasonI18n = {
+                he: oldSummary,
+                en: "Ride completed successfully"
+            };
         }
 
         // Ensure processing.integrityRules has all required fields
@@ -643,31 +841,6 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             }
         }
 
-        // Ensure timezone fields exist
-        if (typeof meta.jsTimezoneOffsetMinutes === 'undefined') {
-            const jsOffset = meta.timezoneOffsetMinutes ?? new Date().getTimezoneOffset();
-            meta.jsTimezoneOffsetMinutes = jsOffset;
-            meta.utcOffsetMinutes = -jsOffset;
-            meta.timezoneOffsetMinutes = jsOffset;
-        }
-        if (typeof meta.utcOffsetMinutes === 'undefined') {
-            meta.utcOffsetMinutes = -meta.jsTimezoneOffsetMinutes;
-        }
-
-        // Ensure GPS sampling fields exist
-        if (meta.sampling?.gps) {
-            if (!meta.sampling.gps.rateEstimateMethod) {
-                meta.sampling.gps.rateEstimateMethod = "updates/duration";
-            }
-            if (!meta.sampling.gps.expectedRangeHz) {
-                meta.sampling.gps.expectedRangeHz = [0.2, 1.2];
-            }
-            if (!meta.sampling.gps.rateConfidence) {
-                const gpsUpdates = meta.counts?.gpsUpdates || 0;
-                meta.sampling.gps.rateConfidence = gpsUpdates > 30 ? "high" : gpsUpdates >= 15 ? "medium" : "low";
-            }
-        }
-
         // Ensure qualityFlags.phoneStability exists
         if (!meta.qualityFlags) meta.qualityFlags = {};
         if (!meta.qualityFlags.phoneStability) {
@@ -686,6 +859,7 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
     } catch (error) {
         console.error("Metadata validation error:", error);
         // Return minimal valid metadata
+        const jsOffset = new Date().getTimezoneOffset();
         return {
             schemaVersion: "1.3",
             idStrategy: "timestamp-ms + random-suffix",
@@ -696,9 +870,11 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             endedAtIso: new Date().toISOString(),
             durationMs: 0,
             durationSeconds: 0,
-            jsTimezoneOffsetMinutes: new Date().getTimezoneOffset(),
-            utcOffsetMinutes: -new Date().getTimezoneOffset(),
-            timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+            timezone: {
+                jsTimezoneOffsetMinutes: jsOffset,
+                utcOffsetMinutes: -jsOffset,
+                note: "jsTimezoneOffsetMinutes: positive = west of UTC; utcOffsetMinutes: positive = east of UTC"
+            },
             app: { name: "Smooth Ride Tracker", version: PKG_VERSION },
             device: {
                 userAgent: "unknown",
@@ -724,7 +900,10 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
                 gyroSamples: 0,
                 gpsUpdates: 0,
                 gpsSnapshots: 0,
-                totalEvents: 0
+                totalEvents: 0,
+                warmupSamplesDropped: 0,
+                firstGpsFixDelayMs: null,
+                permissionDelayMs: null
             },
             derivedRatios: {
                 gpsReplicationFactor: 0,
@@ -763,7 +942,11 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
                 dataMinimizationNotes: "No persistent device identifiers (UDID/IMEI) or user accounts are used. Data is stored locally or exported manually by the user."
             },
             display: {
-                summaryReason: "שגיאה בעיבוד נתוני הנסיעה"
+                summaryReasonKey: "error_processing",
+                summaryReasonI18n: {
+                    he: "שגיאה בעיבוד נתוני הנסיעה",
+                    en: "Error processing ride data"
+                }
             },
             notes: "Metadata validation failed - using fallback values"
         };
@@ -783,18 +966,37 @@ export function migrateMetadata(oldMeta: any): RideMetadata {
             ...oldMeta,
             schemaVersion: "1.3",
 
-            // Add display field
+            // Migrate timezone to nested structure
+            timezone: {
+                jsTimezoneOffsetMinutes: oldMeta.jsTimezoneOffsetMinutes ?? oldMeta.timezoneOffsetMinutes ?? new Date().getTimezoneOffset(),
+                utcOffsetMinutes: oldMeta.utcOffsetMinutes ?? -(oldMeta.timezoneOffsetMinutes ?? new Date().getTimezoneOffset()),
+                note: "jsTimezoneOffsetMinutes: positive = west of UTC; utcOffsetMinutes: positive = east of UTC"
+            },
+
+            // Migrate display to i18n
             display: {
-                summaryReason: generateSummaryReason(oldMeta)
+                summaryReasonKey: "ride_completed_success",
+                summaryReasonI18n: {
+                    he: oldMeta.display?.summaryReason || "נסיעה הושלמה בהצלחה",
+                    en: "Ride completed successfully"
+                }
+            },
+
+            // Add new counts fields
+            counts: {
+                ...oldMeta.counts,
+                warmupSamplesDropped: 0,
+                firstGpsFixDelayMs: null,
+                permissionDelayMs: null
             },
 
             // Enhance qualityFlags
             qualityFlags: {
                 ...oldMeta.qualityFlags,
-                phoneStability: "unknown" as const,
+                phoneStability: oldMeta.qualityFlags?.phoneStability || "unknown",
                 dataIntegrity: {
                     ...oldMeta.qualityFlags?.dataIntegrity,
-                    dropoutCount: 0
+                    dropoutCount: oldMeta.qualityFlags?.dataIntegrity?.dropoutCount || 0
                 }
             },
 
@@ -802,7 +1004,9 @@ export function migrateMetadata(oldMeta: any): RideMetadata {
             processing: {
                 ...oldMeta.processing,
                 integrityRules: {
+                    expectedDtMs: oldMeta.processing?.integrityRules?.expectedDtMs || 100,
                     gapThresholdMultiplier: 2.0,
+                    minGapMs: 150,
                     dropoutThresholdMs: 5000
                 }
             }
@@ -814,4 +1018,51 @@ export function migrateMetadata(oldMeta: any): RideMetadata {
     // For v1.1 or earlier, rebuild from scratch if possible
     console.warn(`Unsupported schema version: ${oldMeta.schemaVersion}`);
     return validateAndNormalizeMetadata(oldMeta);
+}
+
+/**
+ * Compute SHA-256 hash of a string using Web Crypto API
+ */
+export async function computeSHA256(data: string): Promise<string | null> {
+    try {
+        if (typeof crypto === 'undefined' || !crypto.subtle) {
+            return null;
+        }
+
+        const encoder = new TextEncoder();
+        const dataBuffer = encoder.encode(data);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    } catch (error) {
+        console.error("SHA-256 computation error:", error);
+        return null;
+    }
+}
+
+/**
+ * Add export metadata to ride metadata
+ */
+export async function addExportMetadata(
+    metadata: RideMetadata,
+    jsonString: string,
+    format: "json" | "zip" = "json",
+    compressionRatio: number | null = null
+): Promise<RideMetadata> {
+    const bytes = new Blob([jsonString]).size;
+    const sha256 = await computeSHA256(jsonString);
+
+    metadata.export = {
+        format,
+        files: [{
+            name: `ride_${metadata.rideId}.json`,
+            bytes,
+            sha256: sha256 || undefined
+        }],
+        compressionRatio,
+        hashUnavailableReason: sha256 ? undefined : "Web Crypto API not available"
+    };
+
+    return metadata;
 }

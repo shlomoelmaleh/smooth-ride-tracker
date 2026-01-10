@@ -27,10 +27,12 @@ export const RideMetadataSchema = z.object({
     durationMs: z.number().nonnegative(),
     durationSeconds: z.number().nonnegative(),
 
-    // Timezone (unambiguous)
-    jsTimezoneOffsetMinutes: z.number().int().min(-720).max(840),
-    utcOffsetMinutes: z.number().int().min(-840).max(720),
-    timezoneOffsetMinutes: z.number().int().min(-720).max(840), // Legacy
+    // Timezone (nested, no duplicates)
+    timezone: z.object({
+        jsTimezoneOffsetMinutes: z.number().int().min(-720).max(840),
+        utcOffsetMinutes: z.number().int().min(-840).max(720),
+        note: z.string(),
+    }),
 
     // Application
     app: z.object({
@@ -45,9 +47,11 @@ export const RideMetadataSchema = z.object({
         os: z.object({
             name: OSNameSchema,
             major: z.number().optional(),
+            versionFull: z.string().optional(),
         }),
         browserName: z.string(),
         browserMajor: z.union([z.number(), z.string()]),
+        browserVersionFull: z.string().optional(),
         platform: z.string().optional(),
         language: z.string().optional(),
         screen: z.object({
@@ -81,6 +85,9 @@ export const RideMetadataSchema = z.object({
         gpsUpdates: z.number().int().nonnegative(),
         gpsSnapshots: z.number().int().nonnegative(),
         totalEvents: z.number().int().nonnegative(),
+        warmupSamplesDropped: z.number().int().nonnegative(),
+        firstGpsFixDelayMs: z.number().nullable(),
+        permissionDelayMs: z.number().nullable(),
     }),
 
     // Derived Ratios
@@ -134,6 +141,12 @@ export const RideMetadataSchema = z.object({
         isStationaryLikely: z.boolean(),
         hasLowGpsQuality: z.boolean(),
         gpsQualityReason: GpsQualityReasonSchema,
+        gpsQualityEvidence: z.object({
+            avgAccuracyMeters: z.number().optional(),
+            maxJumpMeters: z.number().optional(),
+            avgSpeedMps: z.number().optional(),
+            unrealisticSpeedCount: z.number().optional(),
+        }).optional(),
         phoneStability: PhoneStabilitySchema,
         dataIntegrity: z.object({
             hasGaps: z.boolean(),
@@ -150,10 +163,26 @@ export const RideMetadataSchema = z.object({
         dataMinimizationNotes: z.string(),
     }),
 
-    // UI Display
+    // UI Display (i18n)
     display: z.object({
-        summaryReason: z.string(),
+        summaryReasonKey: z.string(),
+        summaryReasonI18n: z.object({
+            he: z.string(),
+            en: z.string(),
+        }),
     }),
+
+    // Export Metadata
+    export: z.object({
+        format: z.enum(["json", "zip"]),
+        files: z.array(z.object({
+            name: z.string(),
+            bytes: z.number(),
+            sha256: z.string().optional(),
+        })),
+        compressionRatio: z.number().nullable(),
+        hashUnavailableReason: z.string().optional(),
+    }).optional(),
 
     notes: z.string().optional(),
 });
@@ -194,10 +223,10 @@ export function isMetadataValid(metadata: any): boolean {
  * Custom validation: Ensure timezone inversion is correct
  */
 export function validateTimezoneInversion(metadata: any): boolean {
-    if (!metadata.jsTimezoneOffsetMinutes || !metadata.utcOffsetMinutes) {
+    if (!metadata.timezone?.jsTimezoneOffsetMinutes || typeof metadata.timezone?.utcOffsetMinutes === 'undefined') {
         return false;
     }
-    return metadata.utcOffsetMinutes === -metadata.jsTimezoneOffsetMinutes;
+    return metadata.timezone.utcOffsetMinutes === -metadata.timezone.jsTimezoneOffsetMinutes;
 }
 
 /**
