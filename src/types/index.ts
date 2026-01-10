@@ -44,18 +44,34 @@ export interface GpsUpdate {
   heading: number | null;
 }
 
+export interface RideChunk {
+  rideId: string;
+  chunkIndex: number;
+  createdAtEpochMs: number;
+  format: "ndjson";
+  byteLength: number;
+  data: string; // NDJSON string
+}
+
 export interface RideSession {
   id: string;
   startTime: number;
   endTime: number | null;
-  dataPoints: RideDataPoint[];
-  gpsUpdates?: GpsUpdate[];
+  dataPoints: RideDataPoint[]; // Will be empty in the "header" stored in DB
+  gpsUpdates?: GpsUpdate[];    // Will be empty in the "header" stored in DB
   smoothnessScore?: number;
   distance?: number;
   duration?: number;
   startBattery?: number;
   endBattery?: number;
-  metadata?: RideMetadata; // Now properly typed
+  metadata?: RideMetadata;
+  // Step 2 storage metrics
+  storage?: {
+    chunkCount: number;
+    estimatedBytes: number;
+    actualBytesStored: number;
+    isFinalized: boolean;
+  };
 }
 
 export interface RideStats {
