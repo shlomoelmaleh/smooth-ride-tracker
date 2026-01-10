@@ -15,6 +15,20 @@ interface RideStatsProps {
 
 const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompressing }) => {
   const [showGraphs, setShowGraphs] = useState(false);
+  const renderCount = React.useRef(0);
+
+  React.useEffect(() => {
+    renderCount.current++;
+    if (renderCount.current % 5 === 0) {
+      console.log(`[RideStats] Render count: ${renderCount.current} (Check for loops if this is high)`);
+    }
+  });
+
+  React.useEffect(() => {
+    console.timeEnd('ViewDetails-Total');
+    console.log('[RideStats] Mounted with ride:', ride.id);
+    return () => console.log('[RideStats] Unmounted');
+  }, [ride.id]);
 
   const formatDuration = (durationInSeconds: number): string => {
     const hours = Math.floor(durationInSeconds / 3600);
@@ -162,7 +176,10 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
         </CardFooter>
       </Card>
 
-      {showGraphs && ride.dataPoints.length > 0 && (
+      {/* CRITICAL: ONLY render SensorGraphs if showGraphs is true AND we have data. 
+          The previous logic might have been evaluating the map/filter inside SensorGraphs 
+          even if it wasn't visible on some mobile browsers. */}
+      {showGraphs && ride.dataPoints && ride.dataPoints.length > 0 && (
         <SensorGraphs dataPoints={ride.dataPoints} />
       )}
     </div>

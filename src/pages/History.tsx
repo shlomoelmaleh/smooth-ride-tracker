@@ -12,35 +12,37 @@ import { RideSession } from '@/types';
 
 const History = () => {
   const navigate = useNavigate();
-  const { 
-    rides, 
-    deleteRide, 
-    exportRideData, 
-    getRideStats 
+  const {
+    rides,
+    deleteRide,
+    exportRideData,
+    getRideStats
   } = useRideData();
-  
+
   const [selectedRide, setSelectedRide] = useState<RideSession | null>(null);
-  
+
   const handleViewDetails = (ride: RideSession) => {
+    console.time('ViewDetails-Total');
+    console.log('[History] Opening details for ride:', ride.id);
     setSelectedRide(ride);
   };
-  
+
   const handleDelete = (rideId: string) => {
     deleteRide(rideId);
     if (selectedRide?.id === rideId) {
       setSelectedRide(null);
     }
   };
-  
+
   const handleExport = () => {
     if (selectedRide) {
       exportRideData(selectedRide);
     }
   };
-  
+
   return (
     <Layout>
-      <motion.div 
+      <motion.div
         className="w-full max-w-3xl mx-auto"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -53,14 +55,14 @@ const History = () => {
               {rides.length} recorded {rides.length === 1 ? 'ride' : 'rides'}
             </p>
           </div>
-          
+
           {rides.length === 0 && (
             <Button onClick={() => navigate('/')}>
               Start a Ride
             </Button>
           )}
         </div>
-        
+
         <RideHistory
           rides={rides}
           getRideStats={getRideStats}
@@ -68,7 +70,7 @@ const History = () => {
           onDeleteRide={handleDelete}
         />
       </motion.div>
-      
+
       <Dialog open={!!selectedRide} onOpenChange={(open) => !open && setSelectedRide(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -77,7 +79,7 @@ const History = () => {
               {selectedRide && new Date(selectedRide.startTime).toLocaleString()}
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedRide && (
             <RideStats
               ride={selectedRide}
@@ -85,7 +87,7 @@ const History = () => {
               onExport={handleExport}
             />
           )}
-          
+
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setSelectedRide(null)}>
               Close

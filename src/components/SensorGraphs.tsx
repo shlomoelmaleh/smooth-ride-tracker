@@ -10,34 +10,42 @@ interface SensorGraphsProps {
 }
 
 const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
-  // Format data for the accelerometer graph
-  const accelerometerData = dataPoints.map((point, index) => {
-    const timestamp = new Date(point.timestamp).toLocaleTimeString();
-    return {
-      name: timestamp,
-      x: point.accelerometer.x,
-      y: point.accelerometer.y,
-      z: point.accelerometer.z,
-      index
-    };
-  });
+  // 1. EARLY EXIT FOR PERFORMANCE
+  if (!dataPoints || dataPoints.length === 0) {
+    return <div className="p-4 text-center text-muted-foreground italic">No sensor data recorded for this ride.</div>;
+  }
 
-  // Only include every nth point to avoid overwhelming the graph
-  const sampleRate = Math.max(1, Math.floor(accelerometerData.length / 100));
-  const sampledData = accelerometerData.filter((_, i) => i % sampleRate === 0);
+  // 2. STRIKE A BALANCE: Maximum points to try to render (Recharts slows down > 1000-2000)
+  const MAX_POINTS = 1200;
+  const sampleRate = Math.max(1, Math.floor(dataPoints.length / MAX_POINTS));
 
-  // Format data for the gyroscope graph (if available)
+  // 3. OPTIMIZED MAPPING: Only process points we'll actually show
+  const displayData = React.useMemo(() => {
+    const sampled = dataPoints.filter((_, i) => i % sampleRate === 0).slice(0, MAX_POINTS);
+
+    return sampled.map((point, index) => {
+      // Lazy format time only for display (optional: better to use raw timestamp and format in Tooltip)
+      return {
+        timestamp: point.timestamp,
+        index: index * sampleRate,
+        ax: point.accelerometer.x,
+        ay: point.accelerometer.y,
+        az: point.accelerometer.z,
+        gx: point.gyroscope?.alpha || 0,
+        gy: point.gyroscope?.beta || 0,
+        gz: point.gyroscope?.gamma || 0,
+        ex: point.earth?.x,
+        ey: point.earth?.y,
+        ez: point.earth?.z,
+        lat: point.location?.latitude,
+        lng: point.location?.longitude
+      };
+    });
+  }, [dataPoints, sampleRate]);
+
   const hasGyroscopeData = dataPoints.some(point => point.gyroscope !== null);
-  const gyroscopeData = hasGyroscopeData ? dataPoints.map((point, index) => {
-    const timestamp = new Date(point.timestamp).toLocaleTimeString();
-    return {
-      name: timestamp,
-      alpha: point.gyroscope?.alpha || 0,
-      beta: point.gyroscope?.beta || 0,
-      gamma: point.gyroscope?.gamma || 0,
-      index
-    };
-  }).filter((_, i) => i % sampleRate === 0) : [];
+  const hasEarthData = dataPoints.some(p => p.earth !== null);
+  const hasLocationData = dataPoints.some(p => p.location !== null);
 
   return (
     <div className="space-y-8 w-full mb-8">
@@ -57,13 +65,13 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
             >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
-                  data={sampledData}
+                  data={displayData}
                   margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis
                     dataKey="index"
-                    label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
+                    label={{ value: 'Samples', position: 'insideBottomRight', offset: -15 }}
                     tick={false}
                     axisLine={{ strokeWidth: 1.5 }}
                   />
@@ -75,9 +83,9 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Legend verticalAlign="top" height={40} />
-                  <Line type="monotone" dataKey="x" name="X-axis" stroke="var(--color-x)" dot={false} />
-                  <Line type="monotone" dataKey="y" name="Y-axis" stroke="var(--color-y)" dot={false} />
-                  <Line type="monotone" dataKey="z" name="Z-axis" stroke="var(--color-z)" dot={false} />
+                  <Line type="monotone" dataKey="ax" name="X-axis" stroke="var(--color-x)" dot={false} strokeWidth={1} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="ay" name="Y-axis" stroke="var(--color-y)" dot={false} strokeWidth={1} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="az" name="Z-axis" stroke="var(--color-z)" dot={false} strokeWidth={1} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -95,20 +103,20 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
             <div className="h-[400px] px-4 py-6">
               <ChartContainer
                 config={{
-                  alpha: { theme: { light: '#8b5cf6', dark: '#8b5cf6' } },
-                  beta: { theme: { light: '#ec4899', dark: '#ec4899' } },
-                  gamma: { theme: { light: '#f59e0b', dark: '#f59e0b' } },
+                  gx: { theme: { light: '#8b5cf6', dark: '#8b5cf6' } },
+                  gy: { theme: { light: '#ec4899', dark: '#ec4899' } },
+                  gz: { theme: { light: '#f59e0b', dark: '#f59e0b' } },
                 }}
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={gyroscopeData}
+                    data={displayData}
                     margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="index"
-                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
+                      label={{ value: 'Samples', position: 'insideBottomRight', offset: -15 }}
                       tick={false}
                       axisLine={{ strokeWidth: 1.5 }}
                     />
@@ -120,9 +128,9 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                     />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Legend verticalAlign="top" height={40} />
-                    <Line type="monotone" dataKey="alpha" name="Alpha" stroke="var(--color-alpha)" dot={false} />
-                    <Line type="monotone" dataKey="beta" name="Beta" stroke="var(--color-beta)" dot={false} />
-                    <Line type="monotone" dataKey="gamma" name="Gamma" stroke="var(--color-gamma)" dot={false} />
+                    <Line type="monotone" dataKey="gx" name="Alpha" stroke="var(--color-gx)" dot={false} strokeWidth={1} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="gy" name="Beta" stroke="var(--color-gy)" dot={false} strokeWidth={1} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="gz" name="Gamma" stroke="var(--color-gz)" dot={false} strokeWidth={1} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartContainer>
@@ -131,7 +139,7 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
         </Card>
       )}
 
-      {dataPoints.some(p => p.earth !== null) && (
+      {hasEarthData && (
         <Card>
           <CardHeader>
             <CardTitle>Earth-Relative Acceleration</CardTitle>
@@ -148,18 +156,13 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={dataPoints.filter((_, i) => i % sampleRate === 0).map((p, i) => ({
-                      index: i,
-                      ex: p.earth?.x,
-                      ey: p.earth?.y,
-                      ez: p.earth?.z
-                    }))}
+                    data={displayData}
                     margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="index"
-                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
+                      label={{ value: 'Samples', position: 'insideBottomRight', offset: -15 }}
                       tick={false}
                       axisLine={{ strokeWidth: 1.5 }}
                     />
@@ -171,9 +174,9 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                     />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Legend verticalAlign="top" height={40} />
-                    <Line type="monotone" dataKey="ez" name="Vertical (Z)" stroke="var(--color-ez)" dot={false} />
-                    <Line type="monotone" dataKey="ey" name="Lateral (Y)" stroke="var(--color-ey)" dot={false} />
-                    <Line type="monotone" dataKey="ex" name="Longitudinal (X)" stroke="var(--color-ex)" dot={false} />
+                    <Line type="monotone" dataKey="ez" name="Vertical (Z)" stroke="var(--color-ez)" dot={false} strokeWidth={1} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="ey" name="Lateral (Y)" stroke="var(--color-ey)" dot={false} strokeWidth={1} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="ex" name="Longitudinal (X)" stroke="var(--color-ex)" dot={false} strokeWidth={1} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartContainer>
@@ -182,7 +185,7 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
         </Card>
       )}
 
-      {dataPoints.some(p => p.location !== null) && (
+      {hasLocationData && (
         <Card>
           <CardHeader>
             <CardTitle>GPS Data</CardTitle>
@@ -198,17 +201,13 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={dataPoints.filter((_, i) => i % sampleRate === 0).map((p, i) => ({
-                      index: i,
-                      lat: p.location?.latitude,
-                      lng: p.location?.longitude
-                    }))}
+                    data={displayData}
                     margin={{ top: 30, right: 45, left: 45, bottom: 30 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="index"
-                      label={{ value: 'Time', position: 'insideBottomRight', offset: -15 }}
+                      label={{ value: 'Samples', position: 'insideBottomRight', offset: -15 }}
                       tick={false}
                       axisLine={{ strokeWidth: 1.5 }}
                     />
@@ -221,8 +220,8 @@ const SensorGraphs: React.FC<SensorGraphsProps> = ({ dataPoints }) => {
                     />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Legend verticalAlign="top" height={40} />
-                    <Line type="step" dataKey="lat" name="Latitude" stroke="var(--color-lat)" dot={false} strokeWidth={2} />
-                    <Line type="step" dataKey="lng" name="Longitude" stroke="var(--color-lng)" dot={false} strokeWidth={2} />
+                    <Line type="step" dataKey="lat" name="Latitude" stroke="var(--color-lat)" dot={false} strokeWidth={2} isAnimationActive={false} />
+                    <Line type="step" dataKey="lng" name="Longitude" stroke="var(--color-lng)" dot={false} strokeWidth={2} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartContainer>
