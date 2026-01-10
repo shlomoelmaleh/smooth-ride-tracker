@@ -15,43 +15,16 @@ const History = () => {
   const {
     rides,
     deleteRide,
-    exportRideData,
     getRideStats
   } = useRideData();
 
-  // 1. SELECT BY ID ONLY (Avoid passing massive objects through state)
-  const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
-
-  // 2. MEMOIZE LOOKUP
-  const selectedRide = React.useMemo(() => {
-    if (!selectedRideId) return null;
-    return rides.find(r => r.id === selectedRideId) || null;
-  }, [selectedRideId, rides]);
-
-  // 3. MEMOIZE STATS
-  const selectedRideStats = React.useMemo(() => {
-    if (!selectedRide) return null;
-    return getRideStats(selectedRide);
-  }, [selectedRide, getRideStats]);
-
   const handleViewDetails = React.useCallback((ride: RideSession) => {
-    console.time('ViewDetails-Total');
-    console.log('[History] Opening details for ride:', ride.id);
-    setSelectedRideId(ride.id);
-  }, []);
+    navigate(`/history/${ride.id}`);
+  }, [navigate]);
 
   const handleDelete = React.useCallback((rideId: string) => {
     deleteRide(rideId);
-    if (selectedRideId === rideId) {
-      setSelectedRideId(null);
-    }
-  }, [deleteRide, selectedRideId]);
-
-  const handleExport = React.useCallback(() => {
-    if (selectedRide) {
-      exportRideData(selectedRide);
-    }
-  }, [selectedRide, exportRideData]);
+  }, [deleteRide]);
 
   return (
     <Layout>
@@ -83,31 +56,6 @@ const History = () => {
           onDeleteRide={handleDelete}
         />
       </motion.div>
-
-      <Dialog open={!!selectedRideId} onOpenChange={(open) => !open && setSelectedRideId(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Ride Details</DialogTitle>
-            <DialogDescription>
-              {selectedRide && new Date(selectedRide.startTime).toLocaleString()}
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedRide && selectedRideStats && (
-            <RideStats
-              ride={selectedRide}
-              stats={selectedRideStats}
-              onExport={handleExport}
-            />
-          )}
-
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setSelectedRideId(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Layout>
   );
 };

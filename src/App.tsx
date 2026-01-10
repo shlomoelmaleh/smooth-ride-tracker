@@ -8,6 +8,7 @@ import { AnimatePresence } from "framer-motion";
 import Index from "./pages/Index";
 import Stats from "./pages/Stats";
 import History from "./pages/History";
+import RideDetails from "./pages/RideDetails";
 import NotFound from "./pages/NotFound";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -30,6 +31,11 @@ const App = () => (
             <Route path="/history" element={
               <ErrorBoundary>
                 <History />
+              </ErrorBoundary>
+            } />
+            <Route path="/history/:rideId" element={
+              <ErrorBoundary>
+                <RideDetails />
               </ErrorBoundary>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
