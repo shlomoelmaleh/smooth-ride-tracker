@@ -8,7 +8,8 @@ import {
   getAllRidesFromDB,
   deleteRideFromDB,
   clearAllRidesFromDB,
-  migrateFromLocalStorage
+  migrateFromLocalStorage,
+  getRideDataFromDB
 } from '@/lib/storage';
 
 // Calculate the smoothness score from accelerometer data
@@ -333,16 +334,26 @@ export const useRideData = () => {
   // Export ride data
   const exportRideData = async (ride: RideSession) => {
     try {
+      let fullRide = ride;
+
+      // If index-only, fetch full data
+      if (!ride.dataPoints || ride.dataPoints.length === 0) {
+        const extra = await getRideDataFromDB(ride.id);
+        if (extra) {
+          fullRide = { ...ride, ...extra };
+        }
+      }
+
       let downloadBlob: Blob;
       let filename: string;
 
-      if (lastCompressedBlob && generateFilename(ride, 'zip') === lastCompressedFilename) {
+      if (lastCompressedBlob && generateFilename(fullRide, 'zip') === lastCompressedFilename) {
         // Use pre-compressed blob if available
         downloadBlob = lastCompressedBlob;
         filename = lastCompressedFilename;
       } else {
         // Fallback to on-demand compression (e.g., for history items)
-        const result = await compressRideData(ride);
+        const result = await compressRideData(fullRide);
         if (!result) return;
         downloadBlob = result.blob;
         filename = result.filename;
@@ -363,6 +374,16 @@ export const useRideData = () => {
       toast.error('Failed to export data');
     }
   };
+
+  const loadFullRideData = useCallback(async (id: string) => {
+    try {
+      const data = await getRideDataFromDB(id);
+      return data;
+    } catch (err) {
+      console.error('[useRideData] Failed to load full data:', err);
+      return null;
+    }
+  }, []);
 
   // Get stats for a specific ride
   const getRideStats = React.useCallback((ride: RideSession): RideStats => {
@@ -412,6 +433,7 @@ export const useRideData = () => {
     deleteRide,
     clearAllRides,
     exportRideData,
-    getRideStats
+    getRideStats,
+    loadFullRideData
   };
 };

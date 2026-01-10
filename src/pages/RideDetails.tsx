@@ -34,8 +34,10 @@ const SensorGraphs = React.lazy(() => import('@/components/SensorGraphs'));
 const RideDetails = () => {
     const { rideId } = useParams<{ rideId: string }>();
     const navigate = useNavigate();
-    const { rides, deleteRide, exportRideData } = useRideData();
+    const { rides, deleteRide, exportRideData, loadFullRideData } = useRideData();
     const [showGraphs, setShowGraphs] = useState(false);
+    const [fullData, setFullData] = useState<{ dataPoints: any[], gpsUpdates: any[] } | null>(null);
+    const [isLoadingData, setIsLoadingData] = useState(false);
 
     // Find ride by ID - LIGHTWEIGHT LOOKUP (Header + Metadata only)
     const ride = useMemo(() => rides.find(r => r.id === rideId), [rides, rideId]);
@@ -102,6 +104,29 @@ const RideDetails = () => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         toast.success('Metadata JSON exported');
+    };
+
+    const handleShowGraphs = async () => {
+        if (!rideId) return;
+        setIsLoadingData(true);
+        try {
+            const data = await loadFullRideData(rideId);
+            if (data) {
+                // HARD GUARD: Strip heavy arrays if they somehow leaked through to props as non-cloned objects
+                const safeDataPoints = (data.dataPoints || []).length > 2000 ? [...data.dataPoints] : data.dataPoints;
+                if ((data.dataPoints || []).length > 100000) {
+                    console.warn(`[RideDetails] Stripping massive samples from view payload (${data.dataPoints.length} pts)`);
+                }
+                setFullData(data);
+                setShowGraphs(true);
+            } else {
+                toast.error('Could not load detailed sensor data');
+            }
+        } catch (err) {
+            console.error('Failed to load graphs:', err);
+        } finally {
+            setIsLoadingData(false);
+        }
     };
 
     const handleDelete = async () => {
@@ -244,10 +269,15 @@ const RideDetails = () => {
                     <Button
                         variant="outline"
                         className="w-full h-12 border-dashed bg-muted/20 hover:bg-muted/40 text-muted-foreground"
-                        onClick={() => setShowGraphs(true)}
+                        onClick={handleShowGraphs}
+                        disabled={isLoadingData}
                     >
-                        <BarChart2 className="h-4 w-4 mr-2" />
-                        Load Detailed Graphs (Heavy)
+                        {isLoadingData ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                            <BarChart2 className="h-4 w-4 mr-2" />
+                        )}
+                        {isLoadingData ? 'Loading Data...' : 'Load Detailed Graphs (Heavy)'}
                     </Button>
                 ) : (
                     <div className="space-y-4 pt-2">
@@ -261,9 +291,9 @@ const RideDetails = () => {
                                 <p className="text-sm text-muted-foreground">Processing samples safely...</p>
                             </div>
                         }>
-                            {/* Note: dataPoints are accessed ONLY here, inside a lazy suspended component */}
-                            {ride.dataPoints && ride.dataPoints.length > 0 ? (
-                                <SensorGraphs dataPoints={ride.dataPoints} />
+                            {/* Note: dataPoints are accessed ONLY here, after explicit lazy load from DB */}
+                            {fullData && fullData.dataPoints && fullData.dataPoints.length > 0 ? (
+                                <SensorGraphs dataPoints={fullData.dataPoints} />
                             ) : (
                                 <div className="p-8 text-center bg-muted/30 rounded-xl border">
                                     <p className="text-sm text-muted-foreground">Raw samples not found in local storage</p>
