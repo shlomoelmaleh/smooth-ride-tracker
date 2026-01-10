@@ -10,6 +10,7 @@ import {
   clearAllData,
   addRideChunk,
   getRideHeader,
+  getRideChunks,
 } from '@/utils/idb';
 import { ExportWorkerMessage, ExportWorkerResponse } from '@/workers/exportWorker';
 
@@ -77,6 +78,38 @@ export const useRideData = () => {
       setExportStatus('error');
       toast.error(`Export failed: ${e.data.message}`);
     }
+  }, []);
+
+  const loadRideDataPoints = useCallback(async (ride: RideSession, maxPoints = 5000): Promise<RideDataPoint[]> => {
+    const chunks = await getRideChunks(ride.id);
+    if (!chunks.length) return [];
+
+    const estimatedSamples = ride.metadata?.counts?.accelSamples
+      ?? (ride.storage?.chunkCount ? ride.storage.chunkCount * 100 : undefined);
+    const stride = estimatedSamples ? Math.max(1, Math.floor(estimatedSamples / maxPoints)) : 1;
+
+    const sortedChunks = [...chunks].sort((a, b) => a.chunkIndex - b.chunkIndex);
+    const points: RideDataPoint[] = [];
+    let seen = 0;
+
+    for (const chunk of sortedChunks) {
+      const lines = chunk.data.split('\n');
+      for (const line of lines) {
+        if (!line) continue;
+        seen++;
+        if (seen % stride !== 0) continue;
+        try {
+          points.push(JSON.parse(line) as RideDataPoint);
+        } catch (error) {
+          console.warn('Failed to parse ride sample line', error);
+        }
+        if (points.length >= maxPoints) {
+          return points;
+        }
+      }
+    }
+
+    return points;
   }, []);
 
   const updateAggregatorWithSample = useCallback((sample: RideDataPoint) => {
@@ -297,6 +330,7 @@ export const useRideData = () => {
     exportRideData: initiateExport,
     downloadExport,
     getRideStats,
+    loadRideDataPoints,
     updateAggregatorWithSample,
     updateAggregatorWithGps
   };

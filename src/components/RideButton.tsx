@@ -39,7 +39,6 @@ const RideButton: React.FC<RideButtonProps> = ({
         description: "Your device doesn't have the required motion sensors for tracking.",
         variant: "destructive",
       });
-      return;
     }
     
     // Create ripple effect
@@ -63,13 +62,12 @@ const RideButton: React.FC<RideButtonProps> = ({
     <div className="flex flex-col items-center my-10">
       <button
         onClick={handleClick}
-        disabled={!hasRequiredSensors}
         className={cn(
           "relative overflow-hidden w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 shadow-medium",
           isTracking
             ? "bg-destructive text-white hover:bg-destructive/90 animate-pulse-soft"
             : "bg-primary text-white hover:bg-primary/90",
-          !hasRequiredSensors && "opacity-50 cursor-not-allowed"
+          !hasRequiredSensors && "opacity-80"
         )}
       >
         <div className="relative z-10 flex flex-col items-center justify-center">

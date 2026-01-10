@@ -16,7 +16,10 @@ const History = () => {
     deleteRide,
     exportRideData,
     getRideStats,
-    exportStatus
+    exportStatus,
+    exportResult,
+    downloadExport,
+    loadRideDataPoints
   } = useRideData();
 
   const [selectedRide, setSelectedRide] = useState<RideSession | null>(null);
@@ -83,7 +86,10 @@ const History = () => {
               ride={selectedRide}
               stats={getRideStats(selectedRide)}
               onExport={handleExport}
+              onDownload={downloadExport}
+              isExportReady={exportStatus === 'done' && !!exportResult}
               isCompressing={exportStatus !== 'idle' && exportStatus !== 'done' && exportStatus !== 'error'}
+              loadRideDataPoints={loadRideDataPoints}
             />
           )}
 
