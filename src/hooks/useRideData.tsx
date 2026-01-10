@@ -302,28 +302,31 @@ export const useRideData = () => {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }, [exportResult]);
 
-  // Delete a ride
-  const deleteRide = async (rideId: string) => {
-    try {
-      await deleteRideData(rideId);
-      setRides(prev => prev.filter(ride => ride.id !== rideId));
-      toast.success('Ride deleted');
-    } catch (error) {
-      console.error('Delete error:', error);
-      toast.error('Failed to delete ride');
+  // Get stats for a ride (from metadata)
+  const getRideStats = useCallback((ride: RideSession): RideStats => {
+    const meta = ride.metadata;
+    if (!meta) {
+      return {
+        averageAcceleration: 0,
+        maxAcceleration: 0,
+        suddenStops: 0,
+        suddenAccelerations: 0,
+        vibrationLevel: 0,
+        duration: ride.duration || 0,
+        distance: ride.distance || 0
+      };
     }
-  };
 
-  // Clear all
-  const clearAllRides = async () => {
-    try {
-      await clearAllData();
-      setRides([]);
-      toast.success('All history cleared');
-    } catch (error) {
-      toast.error('Failed to clear history');
-    }
-  };
+    return {
+      averageAcceleration: meta.statsSummary?.avgAbsAccel || 0,
+      maxAcceleration: meta.statsSummary?.maxAbsAccel || 0,
+      suddenStops: meta.qualityFlags?.dataIntegrity?.gapCount || 0, // Using gapCount as proxy for events if needed, or better:
+      suddenAccelerations: 0, // We don't have this specifically in meta yet, but we have maxAccel
+      vibrationLevel: meta.statsSummary?.p95AbsAccel || 0,
+      duration: (meta.durationMs || 0) / 1000,
+      distance: meta.statsSummary?.gpsDistanceMeters || 0
+    };
+  }, []);
 
   return {
     rides,
@@ -337,7 +340,9 @@ export const useRideData = () => {
     deleteRide,
     clearAllRides,
     initiateExport,
+    exportRideData: initiateExport, // Alias for component compatibility
     downloadExport,
+    getRideStats,
     updateAggregatorWithSample,
     updateAggregatorWithGps
   };
