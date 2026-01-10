@@ -1,5 +1,6 @@
 import { RideSession, RideDataPoint, GpsUpdate } from '../types';
 import pkg from '../../package.json';
+import { validateMetadata, ValidationResult } from './metadataValidator';
 
 const PKG_VERSION = pkg.version;
 
@@ -184,6 +185,9 @@ export interface RideMetadata {
         compressionRatio: number | null;
         hashUnavailableReason?: string;
     };
+
+    // Validation Results (embedded automatically)
+    validation: ValidationResult;
 
     notes?: string;
 }
@@ -686,6 +690,13 @@ export function buildRideMetadata(
             summaryReasonKey: "",
             summaryReasonI18n: { he: "", en: "" }
         },
+        validation: {
+            status: "pass",
+            errors: [],
+            warnings: [],
+            checkedAtIso: new Date().toISOString(),
+            rulesVersion: "1.0"
+        },
         notes: ""
     };
 
@@ -693,6 +704,9 @@ export function buildRideMetadata(
     const summary = generateSummaryI18n(metadata);
     metadata.display.summaryReasonKey = summary.key;
     metadata.display.summaryReasonI18n = { he: summary.he, en: summary.en };
+
+    // Run automatic validation and embed results
+    metadata.validation = validateMetadata(metadata);
 
     return metadata;
 }
@@ -855,6 +869,9 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             meta.qualityFlags.dataIntegrity.dropoutCount = 0;
         }
 
+        // Run validation to update the validation status
+        meta.validation = validateMetadata(meta);
+
         return meta as RideMetadata;
     } catch (error) {
         console.error("Metadata validation error:", error);
@@ -947,6 +964,13 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
                     he: "שגיאה בעיבוד נתוני הנסיעה",
                     en: "Error processing ride data"
                 }
+            },
+            validation: {
+                status: "fail",
+                errors: ["Metadata processing failed - using fallback values"],
+                warnings: [],
+                checkedAtIso: new Date().toISOString(),
+                rulesVersion: "1.0"
             },
             notes: "Metadata validation failed - using fallback values"
         };
