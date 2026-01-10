@@ -86,7 +86,11 @@ export const useMotionSensors = () => {
   const lastKnownLocationRef = useRef<LocationData | null>(null);
   const lastKnownGyroscopeRef = useRef<GyroscopeData | null>(null);
 
-  const handleAccelerometerData = useCallback((event: DeviceMotionEvent, onChunk: (chunk: RideDataPoint[], index: number) => void) => {
+  const handleAccelerometerData = useCallback((
+    event: DeviceMotionEvent,
+    onChunk: (chunk: RideDataPoint[], index: number) => void,
+    onSample?: (sample: RideDataPoint) => void
+  ) => {
     if (!event.accelerationIncludingGravity) return;
 
     const now = Date.now();
@@ -110,6 +114,7 @@ export const useMotionSensors = () => {
     };
 
     setCurrentData(newDataPoint);
+    if (onSample) onSample(newDataPoint);
 
     // 1. Add to rolling UI buffer
     setDataPoints(prev => {
@@ -151,7 +156,7 @@ export const useMotionSensors = () => {
     setCurrentData(prev => prev ? { ...prev, gyroscope: gyroscopeData } : null);
   }, []);
 
-  const setupGeolocation = useCallback(() => {
+  const setupGeolocation = useCallback((onGpsUpdate?: (update: GpsUpdate) => void) => {
     if (!hasGeolocation) return;
 
     return navigator.geolocation.watchPosition(
@@ -177,6 +182,8 @@ export const useMotionSensors = () => {
         gpsUpdatesRef.current.push(trueGpsUpdate);
         setGpsUpdates([...gpsUpdatesRef.current]);
 
+        if (onGpsUpdate) onGpsUpdate(trueGpsUpdate);
+
         setCurrentData(prev => prev ? { ...prev, location: locationData } : null);
       },
       (error) => console.error('Geolocation error:', error),
@@ -184,7 +191,11 @@ export const useMotionSensors = () => {
     );
   }, [hasGeolocation]);
 
-  const startTracking = useCallback(async (onChunk: (chunk: RideDataPoint[], index: number) => void) => {
+  const startTracking = useCallback(async (
+    onChunk: (chunk: RideDataPoint[], index: number) => void,
+    onGpsUpdate?: (update: GpsUpdate) => void,
+    onSensorSample?: (sample: RideDataPoint) => void
+  ) => {
     const granted = await requestPermissions();
     if (!granted) return false;
 
@@ -202,7 +213,7 @@ export const useMotionSensors = () => {
     setDataPoints([]);
     setGpsUpdates([]);
 
-    const accelHandler = (e: DeviceMotionEvent) => handleAccelerometerData(e, onChunk);
+    const accelHandler = (e: DeviceMotionEvent) => handleAccelerometerData(e, onChunk, onSensorSample);
     window.addEventListener('devicemotion', accelHandler);
 
     if (hasGyroscope || hasGyroscopeRefIndex.current) {
@@ -210,7 +221,7 @@ export const useMotionSensors = () => {
     }
 
     if (hasGeolocation) {
-      geolocationRef.current = setupGeolocation() || null;
+      geolocationRef.current = setupGeolocation(onGpsUpdate) || null;
     }
 
     setIsTracking(true);

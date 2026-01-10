@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RideSession, RideStats, RideDataPoint, GpsUpdate, RideChunk } from '@/types';
+import { RideSession, RideStats, RideDataPoint, GpsUpdate, RideChunk, RideAggregator } from '@/types';
 import { toast } from 'sonner';
-import { buildRideMetadata, validateAndNormalizeMetadata } from '@/lib/metadata';
+import { buildRideMetadata, validateAndNormalizeMetadata, getHaversineDistance } from '@/lib/metadata';
 import {
   saveRideHeader,
   getAllRides,
@@ -10,10 +10,30 @@ import {
   addRideChunk,
   getRideHeader,
   getRideChunks
-} from '@/lib/db';
+} from '@/utils/idb';
 import { ExportWorkerMessage, ExportWorkerResponse } from '@/workers/exportWorker';
 
-export type ExportStatus = 'idle' | 'reading chunks' | 'assembling ndjson' | 'zipping' | 'finalizing' | 'ready' | 'error';
+export type ExportStatus = 'idle' | 'reading' | 'zipping' | 'done' | 'error';
+
+const createInitialAggregator = (): RideAggregator => ({
+  counts: {
+    accelSamples: 0,
+    gyroSamples: 0,
+    gpsUpdates: 0,
+    gpsSnapshots: 0,
+    totalEvents: 0,
+  },
+  maxAbsAccel: 0,
+  absAccelReservoir: [],
+  reservoirSize: 2000,
+  gpsDistanceMeters: 0,
+  totalSpeedMps: 0,
+  gapCount: 0,
+  lastSensorTimestamp: null,
+  stationaryLikely: false,
+  firstGpsFixTimestamp: null,
+  lastGpsUpdate: null,
+});
 
 export const useRideData = () => {
   const [rides, setRides] = useState<RideSession[]>([]);
@@ -23,6 +43,7 @@ export const useRideData = () => {
   const [exportResult, setExportResult] = useState<{ blob: Blob, filename: string } | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
+  const aggregatorRef = useRef<RideAggregator>(createInitialAggregator());
 
   // Load rides from storage on mount
   useEffect(() => {
@@ -52,7 +73,7 @@ export const useRideData = () => {
       setExportProgress(e.data.percent);
     } else if (type === 'SUCCESS') {
       setExportResult({ blob: e.data.blob, filename: e.data.filename });
-      setExportStatus('ready');
+      setExportStatus('done');
       toast.success('Export assembled successfully');
     } else if (type === 'ERROR') {
       setExportStatus('error');
@@ -60,11 +81,61 @@ export const useRideData = () => {
     }
   }, []);
 
+  // Incremental aggregator updates
+  const updateAggregatorWithSample = useCallback((sample: RideDataPoint) => {
+    const agg = aggregatorRef.current;
+    agg.counts.accelSamples++;
+    if (sample.gyroscope) agg.counts.gyroSamples++;
+    if (sample.location) agg.counts.gpsSnapshots++;
+    agg.counts.totalEvents++;
+
+    const acc = sample.earth || sample.accelerometer;
+    const mag = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+    if (mag > agg.maxAbsAccel) agg.maxAbsAccel = mag;
+
+    // Reservoir sampling for percentiles
+    if (agg.absAccelReservoir.length < agg.reservoirSize) {
+      agg.absAccelReservoir.push(mag);
+    } else {
+      const j = Math.floor(Math.random() * agg.counts.accelSamples);
+      if (j < agg.reservoirSize) {
+        agg.absAccelReservoir[j] = mag;
+      }
+    }
+
+    // Gap detection
+    if (agg.lastSensorTimestamp && (sample.timestamp - agg.lastSensorTimestamp > 250)) {
+      agg.gapCount++;
+    }
+    agg.lastSensorTimestamp = sample.timestamp;
+  }, []);
+
+  const updateAggregatorWithGps = useCallback((update: GpsUpdate) => {
+    const agg = aggregatorRef.current;
+    agg.counts.gpsUpdates++;
+    agg.totalSpeedMps += update.speed || 0;
+
+    if (!agg.firstGpsFixTimestamp) {
+      agg.firstGpsFixTimestamp = update.timestamp;
+    }
+
+    if (agg.lastGpsUpdate) {
+      const dist = getHaversineDistance(
+        agg.lastGpsUpdate.latitude, agg.lastGpsUpdate.longitude,
+        update.latitude, update.longitude
+      );
+      agg.gpsDistanceMeters += dist;
+    }
+    agg.lastGpsUpdate = update;
+  }, []);
+
   // Start a new ride session
   const startRide = async () => {
     const timestamp = Date.now();
     const randomSuffix = Math.random().toString(36).substring(2, 7);
     const rideId = `${timestamp}-${randomSuffix}`;
+
+    aggregatorRef.current = createInitialAggregator();
 
     // Attempt to get battery level
     let startBattery: number | undefined;
@@ -85,6 +156,8 @@ export const useRideData = () => {
         chunkCount: 0,
         estimatedBytes: 0,
         actualBytesStored: 0,
+        bytesWritten: 0,
+        avgChunkBytes: 0,
         isFinalized: false
       }
     };
@@ -118,13 +191,17 @@ export const useRideData = () => {
     // Update local metrics and header
     setCurrentRide(prev => {
       if (!prev || prev.id !== rideId) return prev;
+      const newBytes = prev.storage!.actualBytesStored + bytes;
+      const newCount = index + 1;
       const updated = {
         ...prev,
         storage: {
           ...prev.storage!,
-          chunkCount: index + 1,
-          actualBytesStored: prev.storage!.actualBytesStored + bytes,
-          estimatedBytes: prev.storage!.actualBytesStored + bytes, // simplified
+          chunkCount: newCount,
+          actualBytesStored: newBytes,
+          bytesWritten: prev.storage!.bytesWritten + bytes,
+          estimatedBytes: newBytes,
+          avgChunkBytes: Math.round(newBytes / newCount)
         }
       };
 
@@ -147,42 +224,35 @@ export const useRideData = () => {
       }
     } catch (e) { }
 
-    // 1. Gather all chunks to compute final metadata
-    const chunks = await getRideChunks(currentRide.id);
-    const allDataPoints: RideDataPoint[] = [];
-    for (const chunk of chunks) {
-      const points = chunk.data.trim().split('\n').map(line => JSON.parse(line));
-      allDataPoints.push(...points);
-    }
+    const duration = (endTime - currentRide.startTime) / 1000;
+    const agg = aggregatorRef.current;
+
+    // Stationary check
+    agg.stationaryLikely = duration > 30 && (agg.gpsDistanceMeters < 30 || (agg.totalSpeedMps / Math.max(1, agg.counts.gpsUpdates)) < 0.5);
 
     const finalizedRide: RideSession = {
       ...currentRide,
       endTime,
-      dataPoints: allDataPoints, // Temporarily attach for metadata builder
-      gpsUpdates,
+      dataPoints: [], // Keep empty
+      gpsUpdates: [], // Keep empty
       endBattery,
-      duration: (endTime - currentRide.startTime) / 1000,
+      duration,
       storage: {
         ...currentRide.storage!,
-        isFinalized: true,
-        actualBytesStored: chunks.reduce((acc, c) => acc + c.byteLength, 0),
-        chunkCount: chunks.length
+        isFinalized: true
       }
     };
 
-    // 2. Build and validate metadata
-    const rawMetadata = buildRideMetadata(finalizedRide);
+    // 2. Build and validate metadata using aggregator
+    const rawMetadata = buildRideMetadata(finalizedRide, agg);
     finalizedRide.metadata = validateAndNormalizeMetadata(rawMetadata);
 
-    // 3. Clear large arrays before saving header
-    const rideToSave = { ...finalizedRide, dataPoints: [] };
-    await saveRideHeader(rideToSave);
+    await saveRideHeader(finalizedRide);
 
-    setRides(prev => [...prev.filter(r => r.id !== finalizedRide.id), rideToSave]);
+    setRides(prev => [...prev.filter(r => r.id !== finalizedRide.id), finalizedRide]);
     setCurrentRide(null);
 
-    // 4. Initial background export start
-    initiateExport(finalizedRide);
+    // 3. No automatic export initiation anymore
 
     return finalizedRide;
   };
@@ -196,7 +266,7 @@ export const useRideData = () => {
     }
 
     setExportResult(null);
-    setExportStatus('reading chunks');
+    setExportStatus('reading');
     setExportProgress(0);
 
     // Initialize worker if needed
@@ -267,7 +337,9 @@ export const useRideData = () => {
     deleteRide,
     clearAllRides,
     initiateExport,
-    downloadExport
+    downloadExport,
+    updateAggregatorWithSample,
+    updateAggregatorWithGps
   };
 };
 

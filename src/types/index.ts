@@ -70,6 +70,8 @@ export interface RideSession {
     chunkCount: number;
     estimatedBytes: number;
     actualBytesStored: number;
+    bytesWritten: number; // For Stage 2 requirement E-2
+    avgChunkBytes: number; // For Stage 2 requirement E-2
     isFinalized: boolean;
   };
 }
@@ -82,6 +84,26 @@ export interface RideStats {
   vibrationLevel: number;
   duration: number;
   distance: number;
+}
+
+export interface RideAggregator {
+  counts: {
+    accelSamples: number;
+    gyroSamples: number;
+    gpsUpdates: number;
+    gpsSnapshots: number;
+    totalEvents: number;
+  };
+  maxAbsAccel: number;
+  absAccelReservoir: number[];
+  reservoirSize: number;
+  gpsDistanceMeters: number;
+  totalSpeedMps: number;
+  gapCount: number;
+  lastSensorTimestamp: number | null;
+  stationaryLikely: boolean;
+  firstGpsFixTimestamp: number | null;
+  lastGpsUpdate: GpsUpdate | null;
 }
 
 // Re-export RideMetadata for convenience

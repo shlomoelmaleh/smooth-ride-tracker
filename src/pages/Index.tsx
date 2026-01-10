@@ -2,14 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import RideButton from '@/components/RideButton';
-import RideStats from '@/components/RideStats';
-import ExportProgress from '@/components/ExportProgress';
 import { useMotionSensors } from '@/hooks/useMotionSensors';
 import { useRideData } from '@/hooks/useRideData';
 import { toast } from 'sonner';
-import { Card, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
-import { Database, HardDrive, Cpu } from 'lucide-react';
 import { RideDataPoint } from '@/types';
 
 const Index = () => {
@@ -25,12 +21,11 @@ const Index = () => {
 
   const {
     currentRide,
-    exportStatus,
-    exportProgress,
     startRide,
     saveChunk,
     endRide,
-    downloadExport
+    updateAggregatorWithSample,
+    updateAggregatorWithGps
   } = useRideData();
 
   const [completedRide, setCompletedRide] = useState<any>(null);
@@ -68,51 +63,22 @@ const Index = () => {
     ].join(':');
   };
 
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
   const handleStartTracking = async () => {
     const ride = await startRide();
     if (!ride) return;
 
-    const stopTracking = await startTracking((chunk, index) => {
-      saveChunk(ride.id, chunk, index);
-    });
+    const stopTracking = await startTracking(
+      (chunk, index) => saveChunk(ride.id, chunk, index),
+      (gpsUpdate) => updateAggregatorWithGps(gpsUpdate),
+      (sample) => updateAggregatorWithSample(sample)
+    );
 
     if (stopTracking) {
       stopTrackingRef.current = stopTracking;
-      toast.success('Ride tracking started (IndexedDB chunking enabled)');
-    } else {
-      // Failed to start
+      toast.success('Ride tracking started');
     }
   };
 
-  const handleStopTracking = async () => {
-    if (stopTrackingRef.current) {
-      stopTrackingRef.current();
-      stopTrackingRef.current = null;
-
-      const { gpsUpdates } = useMotionSensors.prototype; // This won't work, we need the state from the hook instance
-      // Wait, useMotionSensors instance is reachable via the hook call in the component
-    }
-  };
-
-  // Re-define stop to capture current state from hook
-  const stopRideCapture = useCallback(async () => {
-    if (stopTrackingRef.current) {
-      stopTrackingRef.current();
-      stopTrackingRef.current = null;
-
-      const finishedRide = await endRide(useMotionSensors.prototype.gpsUpdates || []); // Still problematic
-    }
-  }, [endRide]);
-
-  // Real implementation of stop using current closure
   const handleFinalStop = async (gps: any[]) => {
     if (stopTrackingRef.current) {
       stopTrackingRef.current();
@@ -120,7 +86,7 @@ const Index = () => {
       const completed = await endRide(gps);
       if (completed) {
         setCompletedRide(completed);
-        toast.success('Ride completed and safely stored in chunks');
+        toast.success('Ride completed');
       }
     }
   };
@@ -144,7 +110,7 @@ const Index = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
             >
-              Memory-safe recording & non-blocking exports
+              Advanced Ride Tracking
             </motion.p>
           </div>
 
@@ -163,62 +129,20 @@ const Index = () => {
 
           {isTracking && (
             <motion.div
-              className="mt-6 animate-fade-in"
+              className="mt-12 animate-fade-in"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <Card className="overflow-hidden">
-                <CardContent className="pt-6">
-                  <div className="text-center mb-6">
-                    <p className="text-sm text-muted-foreground mb-1">Recording Duration</p>
-                    <p className="text-4xl font-mono font-bold text-primary">
-                      {formatElapsedTime(elapsedSeconds)}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-left">
-                    <div className="bg-primary/5 p-3 rounded-lg border border-primary/10">
-                      <div className="flex items-center space-x-2 text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
-                        <Database className="w-3 h-3" />
-                        <span>Storage</span>
-                      </div>
-                      <p className="text-sm font-mono font-semibold">
-                        {formatBytes(currentRide?.storage?.actualBytesStored || 0)}
-                      </p>
-                    </div>
-                    <div className="bg-primary/5 p-3 rounded-lg border border-primary/10">
-                      <div className="flex items-center space-x-2 text-[10px] text-muted-foreground uppercase tracking-widest mb-1">
-                        <HardDrive className="w-3 h-3" />
-                        <span>Chunks</span>
-                      </div>
-                      <p className="text-sm font-mono font-semibold">
-                        {currentRide?.storage?.chunkCount || 0}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-center space-x-4 text-[10px] text-muted-foreground">
-                    <div className="flex items-center">
-                      <Cpu className="w-3 h-3 mr-1" />
-                      <span>{totalSamples} samples</span>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-1" />
-                      <span>LIVE CHUNKING</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Functional Stop Button replacement for the complex one if needed */}
-              <div className="mt-6">
-                <button
-                  onClick={() => handleFinalStop(gpsUpdates)}
-                  className="w-full py-4 bg-destructive text-destructive-foreground rounded-full font-bold shadow-lg"
-                >
-                  STOP RECORDING
-                </button>
+              <div className="text-center mb-8">
+                <p className="text-sm text-muted-foreground mb-2">Recording Duration</p>
+                <p className="text-5xl font-mono font-bold text-primary tracking-tight">
+                  {formatElapsedTime(elapsedSeconds)}
+                </p>
+                <div className="flex items-center justify-center mt-4 text-[10px] text-muted-foreground uppercase tracking-widest">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-2" />
+                  <span>Recording Session...</span>
+                </div>
               </div>
             </motion.div>
           )}
@@ -226,33 +150,24 @@ const Index = () => {
 
         {completedRide && !isTracking && (
           <motion.div
-            className="mt-8"
+            className="mt-8 text-center"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-xl font-medium mb-4 text-center">Ride Captured</h2>
-
-            <ExportProgress
-              status={exportStatus}
-              progress={exportProgress}
-              onDownload={downloadExport}
-            />
-
-            <div className="mt-8 text-center bg-muted/50 p-4 rounded-xl border border-dashed text-xs text-muted-foreground">
-              Ride {completedRide.id.slice(-5)} is safely stored in IndexedDB.
+            <h2 className="text-xl font-medium mb-4">Ride Captured Successfully</h2>
+            <div className="bg-muted/30 p-6 rounded-2xl border border-dashed text-sm text-muted-foreground mb-6">
+              Your ride data is safely stored.
               <br />
-              Export assembly runs in a non-blocking background worker.
+              Visit History to view stats or export.
             </div>
 
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => navigate('/history')}
-                className="text-primary underline text-sm"
-              >
-                View History
-              </button>
-            </div>
+            <button
+              onClick={() => navigate('/history')}
+              className="w-full py-4 bg-primary text-primary-foreground rounded-full font-bold shadow-lg hover:bg-primary/90 transition-all"
+            >
+              VIEW RIDE HISTORY
+            </button>
           </motion.div>
         )}
 
@@ -282,31 +197,35 @@ const Index = () => {
           </motion.div>
         )}
 
-        {/* Dev Tool: 30-min Simulator */}
+        {/* Dev Tool: 10-min Simulator */}
         {process.env.NODE_ENV === 'development' && !isTracking && !completedRide && (
           <div className="mt-12 p-4 border border-dashed rounded-xl bg-muted/30">
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Dev Tools</h3>
             <button
               onClick={async () => {
-                const toastId = toast.loading('Simulating 30-min ride...');
+                const toastId = toast.loading('Simulating 10-min ride...');
                 const ride = await startRide();
                 if (!ride) return;
 
-                // Simulate 30 mins * 60 samples/sec = 108,000 samples
-                const TOTAL_SAMPLES = 108000;
+                // Simulate 10 mins * 60 samples/sec = 36,000 samples
+                const TOTAL_SAMPLES = 36000;
                 const SAMPLES_PER_CHUNK = 120;
                 const numChunks = TOTAL_SAMPLES / SAMPLES_PER_CHUNK;
 
                 for (let i = 0; i < numChunks; i++) {
-                  const chunk: RideDataPoint[] = Array.from({ length: SAMPLES_PER_CHUNK }).map((_, j) => ({
-                    timestamp: ride.startTime + (i * SAMPLES_PER_CHUNK + j) * (1000 / 60),
-                    accelerometer: { x: 0, y: 9.8, z: 0, timestamp: ride.startTime + (i * SAMPLES_PER_CHUNK + j) * (1000 / 60) },
-                    gyroscope: null,
-                    location: null,
-                    earth: null
-                  }));
+                  const chunk: RideDataPoint[] = Array.from({ length: SAMPLES_PER_CHUNK }).map((_, j) => {
+                    const sample = {
+                      timestamp: ride.startTime + (i * SAMPLES_PER_CHUNK + j) * (1000 / 60),
+                      accelerometer: { x: (Math.random() - 0.5) * 2, y: 9.8 + (Math.random() - 0.5), z: (Math.random() - 0.5), timestamp: Date.now() },
+                      gyroscope: null,
+                      location: null,
+                      earth: null
+                    };
+                    updateAggregatorWithSample(sample);
+                    return sample;
+                  });
                   await saveChunk(ride.id, chunk, i);
-                  if (i % 100 === 0) toast.loading(`Simulating: ${Math.round((i / numChunks) * 100)}%`, { id: toastId });
+                  if (i % 50 === 0) toast.loading(`Simulating: ${Math.round((i / numChunks) * 100)}%`, { id: toastId });
                 }
 
                 await endRide([]);
@@ -314,10 +233,10 @@ const Index = () => {
               }}
               className="w-full py-2 text-xs font-semibold bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
             >
-              SIMULATE 30-MIN RIDE (100k+ Samples)
+              SIMULATE 10-MIN RIDE
             </button>
             <p className="text-[10px] text-muted-foreground mt-2 text-center">
-              Tests chunking, IDB limits, and Web Worker zipping.
+              Tests chunking, aggregator, and metadata builder.
             </p>
           </div>
         )}
