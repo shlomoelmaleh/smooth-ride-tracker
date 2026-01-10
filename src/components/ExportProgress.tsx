@@ -16,17 +16,15 @@ const ExportProgress: React.FC<ExportProgressProps> = ({ status, progress, onDow
 
     const getStatusText = () => {
         switch (status) {
-            case 'reading chunks': return 'Reading data from storage...';
-            case 'assembling ndjson': return 'Assembling data points...';
+            case 'reading': return 'Reading data from storage...';
             case 'zipping': return 'Compressing ride data (ZIP)...';
-            case 'finalizing': return 'Finalizing export...';
-            case 'ready': return 'Export ready for download';
+            case 'done': return 'Export ready for download';
             case 'error': return 'Export failed';
             default: return 'Processing...';
         }
     };
 
-    const isComplete = status === 'ready';
+    const isComplete = status === 'done';
     const isError = status === 'error';
     const isProcessing = !isComplete && !isError;
 

@@ -302,6 +302,29 @@ export const useRideData = () => {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }, [exportResult]);
 
+  // Delete a ride
+  const deleteRide = async (rideId: string) => {
+    try {
+      await deleteRideData(rideId);
+      setRides(prev => prev.filter(ride => ride.id !== rideId));
+      toast.success('Ride deleted');
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete ride');
+    }
+  };
+
+  // Clear all rides
+  const clearAllRides = async () => {
+    try {
+      await clearAllData();
+      setRides([]);
+      toast.success('All history cleared');
+    } catch (error) {
+      toast.error('Failed to clear history');
+    }
+  };
+
   // Get stats for a ride (from metadata)
   const getRideStats = useCallback((ride: RideSession): RideStats => {
     const meta = ride.metadata;
@@ -318,11 +341,11 @@ export const useRideData = () => {
     }
 
     return {
-      averageAcceleration: meta.statsSummary?.avgAbsAccel || 0,
+      averageAcceleration: meta.statsSummary?.maxAbsAccel || 0, // Using maxAbsAccel as approximation
       maxAcceleration: meta.statsSummary?.maxAbsAccel || 0,
-      suddenStops: meta.qualityFlags?.dataIntegrity?.gapCount || 0, // Using gapCount as proxy for events if needed, or better:
-      suddenAccelerations: 0, // We don't have this specifically in meta yet, but we have maxAccel
-      vibrationLevel: meta.statsSummary?.p95AbsAccel || 0,
+      suddenStops: meta.qualityFlags?.dataIntegrity?.gapCount || 0,
+      suddenAccelerations: 0,
+      vibrationLevel: meta.statsSummary?.maxAbsAccelContext?.p95 || 0,
       duration: (meta.durationMs || 0) / 1000,
       distance: meta.statsSummary?.gpsDistanceMeters || 0
     };
@@ -340,7 +363,7 @@ export const useRideData = () => {
     deleteRide,
     clearAllRides,
     initiateExport,
-    exportRideData: initiateExport, // Alias for component compatibility
+    exportRideData: initiateExport,
     downloadExport,
     getRideStats,
     updateAggregatorWithSample,
