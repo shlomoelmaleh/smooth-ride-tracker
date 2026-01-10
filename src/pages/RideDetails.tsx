@@ -111,10 +111,18 @@ const RideDetails = () => {
         }
     };
 
-    const formatDuration = (seconds: number | undefined) => {
-        if (seconds === undefined) return "—";
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
+    const ensureString = (val: any, fallback: string = "—"): string => {
+        if (val === null || val === undefined) return fallback;
+        if (typeof val === 'string') return val;
+        if (typeof val === 'number') return String(val);
+        return JSON.stringify(val);
+    };
+
+    const formatDuration = (seconds: any) => {
+        const s = Number(seconds);
+        if (isNaN(s)) return "—";
+        const mins = Math.floor(s / 60);
+        const secs = Math.floor(s % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
@@ -188,7 +196,7 @@ const RideDetails = () => {
                     <div className="px-6 py-3 bg-muted/30 border-t flex items-center justify-between overflow-hidden">
                         <span className="text-xs text-muted-foreground">Insight Status</span>
                         <span className="text-xs font-semibold truncate max-w-[200px]">
-                            {metadata.display?.summaryReasonI18n?.en || (metadata.qualityFlags?.isStationaryLikely ? 'Stationary' : 'Valid Recording')}
+                            {ensureString(metadata.display?.summaryReasonI18n?.en || (metadata.qualityFlags?.isStationaryLikely ? 'Stationary' : 'Valid Recording'))}
                         </span>
                     </div>
                 </Card>
@@ -222,7 +230,7 @@ const RideDetails = () => {
                             <span className="text-muted-foreground">GPS Status</span>
                             {metadata.qualityFlags?.hasLowGpsQuality ? (
                                 <span className="text-amber-600 font-bold text-xs uppercase tracking-wider">
-                                    {metadata.qualityFlags.gpsQualityReason?.replace('-', ' ') || 'Degraded'}
+                                    {ensureString(metadata.qualityFlags.gpsQualityReason)?.replace('-', ' ') || 'Degraded'}
                                 </span>
                             ) : (
                                 <span className="text-green-600 font-bold text-xs uppercase tracking-wider">Strong</span>
@@ -278,21 +286,21 @@ const RideDetails = () => {
                             <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-[11px]">
                                 <div className="space-y-1">
                                     <p className="text-muted-foreground uppercase font-bold tracking-tighter opacity-70">Sampling Rate</p>
-                                    <p className="font-mono text-xs">A: {metadata.sampling?.accelerometerHz ?? 0} Hz</p>
-                                    <p className="font-mono text-xs text-muted-foreground">G: {metadata.sampling?.gpsHz ?? 0} Hz</p>
+                                    <p className="font-mono text-xs">A: {ensureString(metadata.sampling?.accelerometerHz, "0")} Hz</p>
+                                    <p className="font-mono text-xs text-muted-foreground">G: {ensureString(metadata.sampling?.gpsHz, "0")} Hz</p>
                                 </div>
                                 <div className="space-y-1">
                                     <p className="text-muted-foreground uppercase font-bold tracking-tighter opacity-70">Environment</p>
-                                    <p className="font-mono text-xs truncate">{metadata.device?.os?.name ?? "Unknown"} OS</p>
-                                    <p className="font-mono text-xs text-muted-foreground truncate">{metadata.device?.browserName ?? "Unknown"}</p>
+                                    <p className="font-mono text-xs truncate">{ensureString(metadata.device?.os?.name, "Unknown")} OS</p>
+                                    <p className="font-mono text-xs text-muted-foreground truncate">{ensureString(metadata.device?.browserName, "Unknown")}</p>
                                 </div>
                                 <div className="space-y-1">
                                     <p className="text-muted-foreground uppercase font-bold tracking-tighter opacity-70">App Version</p>
-                                    <p className="font-mono text-xs">{metadata.app?.version ?? "Unknown"}</p>
+                                    <p className="font-mono text-xs">{ensureString(metadata.app?.version, "Unknown")}</p>
                                 </div>
                                 <div className="space-y-1">
                                     <p className="text-muted-foreground uppercase font-bold tracking-tighter opacity-70">Backend</p>
-                                    <p className="font-mono text-xs">Schema {metadata.schemaVersion}</p>
+                                    <p className="font-mono text-xs">Schema {ensureString(metadata.schemaVersion, "1.0")}</p>
                                 </div>
                             </div>
                         </AccordionContent>

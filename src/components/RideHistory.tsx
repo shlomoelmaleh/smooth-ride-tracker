@@ -36,6 +36,13 @@ const RideHistory: React.FC<RideHistoryProps> = ({
     );
   }
 
+  const ensureString = (val: any, fallback: string = "—"): string => {
+    if (val === null || val === undefined) return fallback;
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return String(val);
+    return JSON.stringify(val);
+  };
+
   const sortedRides = [...rides].sort((a, b) => b.startTime - a.startTime);
 
   const formatDate = (timestamp: number): string => {
@@ -103,7 +110,7 @@ const RideHistory: React.FC<RideHistoryProps> = ({
                   </CardDescription>
                 </div>
                 <div className={cn("px-3 py-1 rounded-full text-xs font-medium", badge.color)}>
-                  {badge.label}
+                  {ensureString(badge.label)}
                 </div>
               </div>
             </CardHeader>
@@ -116,7 +123,7 @@ const RideHistory: React.FC<RideHistoryProps> = ({
                 </div>
                 <div className="flex items-center">
                   <ArrowUpDown size={16} className="mr-2 text-muted-foreground" />
-                  <span className="text-sm">{eventCount} events</span>
+                  <span className="text-sm">{ensureString(eventCount)} events</span>
                 </div>
               </div>
 

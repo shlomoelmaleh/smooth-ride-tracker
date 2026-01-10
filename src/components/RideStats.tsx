@@ -47,6 +47,13 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
     return formatted;
   };
 
+  const ensureString = (val: any, fallback: string = "—"): string => {
+    if (val === null || val === undefined) return fallback;
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return String(val);
+    return JSON.stringify(val);
+  };
+
   const formatDistance = (distanceInMeters: number): string => {
     const distanceInKilometers = distanceInMeters / 1000;
     return `${distanceInKilometers.toFixed(2)} km`;
@@ -139,10 +146,10 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
                   <p className="text-[10px] text-amber-500 font-medium">⚠️ GPS data may be duplicated (low update rate)</p>
                 )}
                 {ride.metadata.qualityFlags.hasLowGpsQuality && (
-                  <p className="text-[10px] text-amber-500 font-medium">⚠️ Low GPS quality: {ride.metadata.qualityFlags.gpsQualityReason}</p>
+                  <p className="text-[10px] text-amber-500 font-medium">⚠️ Low GPS quality: {ensureString(ride.metadata.qualityFlags.gpsQualityReason)}</p>
                 )}
                 {ride.metadata.qualityFlags.dataIntegrity?.hasGaps && (
-                  <p className="text-[10px] text-red-500 font-medium">❌ Signal integrity issue: {ride.metadata.qualityFlags.dataIntegrity.gapCount} gaps</p>
+                  <p className="text-[10px] text-red-500 font-medium">❌ Signal integrity issue: {ensureString(ride.metadata.qualityFlags.dataIntegrity.gapCount)} gaps</p>
                 )}
                 {ride.metadata.qualityFlags.isStationaryLikely && (
                   <p className="text-[10px] text-blue-500 font-medium">ℹ️ Ride appears to be stationary</p>
