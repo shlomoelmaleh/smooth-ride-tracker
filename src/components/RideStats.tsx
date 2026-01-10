@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, TrendingUp, MapPin, Clock, BarChart2 } from 'lucide-react';
-import type { RideSession, RideStats as RideStatsType } from '@/types';
+import type { RideDataPoint, RideSession, RideStats as RideStatsType } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -10,11 +10,54 @@ interface RideStatsProps {
   ride: RideSession;
   stats: RideStatsType;
   onExport: () => void;
+  onDownload?: () => void;
+  isExportReady?: boolean;
   isCompressing?: boolean;
+  loadRideDataPoints?: (ride: RideSession, maxPoints?: number) => Promise<RideDataPoint[]>;
 }
 
-const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompressing }) => {
+const RideStats: React.FC<RideStatsProps> = ({
+  ride,
+  stats,
+  onExport,
+  onDownload,
+  isExportReady,
+  isCompressing,
+  loadRideDataPoints
+}) => {
   const [showGraphs, setShowGraphs] = useState(false);
+  const [graphDataPoints, setGraphDataPoints] = useState<RideDataPoint[]>(ride.dataPoints ?? []);
+  const [graphStatus, setGraphStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+
+  useEffect(() => {
+    setGraphDataPoints(ride.dataPoints ?? []);
+    setGraphStatus('idle');
+    setShowGraphs(false);
+  }, [ride.id, ride.dataPoints]);
+
+  useEffect(() => {
+    if (!showGraphs) return;
+    if (graphDataPoints.length > 0 || graphStatus === 'loading') return;
+    if (!loadRideDataPoints) return;
+
+    let cancelled = false;
+    setGraphStatus('loading');
+
+    loadRideDataPoints(ride, 5000)
+      .then((points) => {
+        if (cancelled) return;
+        setGraphDataPoints(points);
+        setGraphStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGraphStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [graphDataPoints.length, graphStatus, loadRideDataPoints, ride, showGraphs]);
 
   const formatDuration = (durationInSeconds: number | undefined): string => {
     if (durationInSeconds === undefined || isNaN(durationInSeconds)) return 'N/A';
@@ -131,11 +174,29 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
               {isCompressing ? 'Zipping...' : 'Export (ZIP)'}
             </Button>
           </div>
+          {isExportReady && onDownload && (
+            <Button variant="secondary" size="sm" className="w-full" onClick={onDownload}>
+              Download ZIP
+            </Button>
+          )}
         </CardFooter>
       </Card>
 
-      {showGraphs && ride?.dataPoints && ride.dataPoints.length > 0 && (
-        <SensorGraphs dataPoints={ride.dataPoints} />
+      {showGraphs && (
+        <>
+          {graphStatus === 'loading' && (
+            <div className="text-xs text-muted-foreground">Loading sensor data…</div>
+          )}
+          {graphStatus === 'error' && (
+            <div className="text-xs text-destructive">Unable to load sensor samples for graphs.</div>
+          )}
+          {graphStatus !== 'loading' && graphDataPoints.length === 0 && (
+            <div className="text-xs text-muted-foreground">No sensor samples available for this ride.</div>
+          )}
+          {graphDataPoints.length > 0 && (
+            <SensorGraphs dataPoints={graphDataPoints} />
+          )}
+        </>
       )}
     </div>
   );

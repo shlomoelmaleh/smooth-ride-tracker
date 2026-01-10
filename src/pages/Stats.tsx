@@ -10,7 +10,7 @@ import RideStats from '@/components/RideStats';
 
 const Stats = () => {
   const navigate = useNavigate();
-  const { rides, getRideStats, exportRideData, exportStatus } = useRideData();
+  const { rides, getRideStats, exportRideData, exportStatus, exportResult, downloadExport, loadRideDataPoints } = useRideData();
   const [aggrStats, setAggrStats] = useState({
     totalRides: 0,
     totalDistance: 0,
@@ -173,7 +173,10 @@ const Stats = () => {
               ride={lastRide}
               stats={lastRideStats}
               onExport={() => exportRideData(lastRide)}
+              onDownload={downloadExport}
+              isExportReady={exportStatus === 'done' && !!exportResult}
               isCompressing={exportStatus !== 'idle' && exportStatus !== 'done' && exportStatus !== 'error'}
+              loadRideDataPoints={loadRideDataPoints}
             />
           </motion.div>
         )}
