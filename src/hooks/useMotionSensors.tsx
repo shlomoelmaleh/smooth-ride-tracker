@@ -7,6 +7,7 @@ export const useMotionSensors = () => {
   const [currentData, setCurrentData] = useState<RideDataPoint | null>(null);
   const [dataPoints, setDataPoints] = useState<RideDataPoint[]>([]);
   const [gpsUpdates, setGpsUpdates] = useState<GpsUpdate[]>([]);
+  const [sampleCount, setSampleCount] = useState(0);
 
   const [hasAccelerometer, setHasAccelerometer] = useState(false);
   const [hasGyroscope, setHasGyroscope] = useState(false);
@@ -24,20 +25,37 @@ export const useMotionSensors = () => {
 
   /**
    * CRITICAL for iOS: Request permissions for Motion AND Orientation
-   * Must be called in response to a user gesture.
+   * Reordered to start with Geolocation for better Safari behavior.
    */
   const requestPermissions = async (): Promise<boolean> => {
     try {
-      // 1. Motion Admission (iOS 13+)
+      // 1. Geolocation Admission FIRST (All browsers)
+      // This is often the most intrusive/prompt-heavy, so we start here.
+      if (navigator.geolocation) {
+        const geoGranted = await new Promise<boolean>((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            () => resolve(true),
+            (err) => {
+              console.warn('Geolocation denied:', err);
+              toast.error('Location access denied. Ride will lack GPS coordinates.');
+              resolve(true); // Allow proceeding with sensors only if user wants
+            },
+            { timeout: 8000 }
+          );
+        });
+        if (!geoGranted) return false;
+      }
+
+      // 2. Motion Admission (iOS 13+)
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
         const motionRes = await (DeviceMotionEvent as any).requestPermission();
         if (motionRes !== 'granted') {
-          toast.error('Motion sensor access denied. Check iOS Settings > Safari.');
+          toast.error('Motion sensor access denied.');
           return false;
         }
       }
 
-      // 2. Orientation Admission (iOS 13+)
+      // 3. Orientation Admission (iOS 13+)
       if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
         const orientRes = await (DeviceOrientationEvent as any).requestPermission();
         if (orientRes !== 'granted') {
@@ -46,25 +64,10 @@ export const useMotionSensors = () => {
         }
       }
 
-      // 3. Geolocation (All)
-      if (navigator.geolocation) {
-        return new Promise((resolve) => {
-          navigator.geolocation.getCurrentPosition(
-            () => resolve(true),
-            (err) => {
-              console.warn('Geolocation denied:', err);
-              toast.error('Location access denied. Ride will lack 2D coordinates.');
-              resolve(true); // Proceed without GPS if user allows
-            },
-            { timeout: 5000 }
-          );
-        });
-      }
-
       return true;
     } catch (error) {
       console.error('Permission request failed:', error);
-      toast.error('Hardware sensors unavailable or restricted.');
+      toast.error('Hardware sensors unavailable.');
       return false;
     }
   };
@@ -75,21 +78,23 @@ export const useMotionSensors = () => {
     onSensorSample?: (sample: RideDataPoint) => void
   ) => {
     setIsTracking(true);
-    setDataPoints([]);
-    setGpsUpdates([]);
+    setSampleCount(0);
     totalSamplesRef.current = 0;
+
     let chunkIndex = 0;
     let currentChunk: RideDataPoint[] = [];
 
     const handleMotion = (event: DeviceMotionEvent) => {
-      if (!event.acceleration) return;
+      // Robust check: Support both user acceleration and gravity fallback if device is moving
+      const accel = event.acceleration || event.accelerationIncludingGravity;
+      if (!accel) return;
 
       const sample: RideDataPoint = {
         timestamp: Date.now(),
         accelerometer: {
-          x: event.acceleration.x || 0,
-          y: event.acceleration.y || 0,
-          z: event.acceleration.z || 0,
+          x: accel.x ?? 0,
+          y: accel.y ?? 0,
+          z: accel.z ?? 0,
           timestamp: Date.now()
         },
         gyroscope: null,
@@ -100,6 +105,11 @@ export const useMotionSensors = () => {
       currentChunk.push(sample);
       totalSamplesRef.current++;
 
+      // Update state sparingly to avoid UI lag, but enough to show life
+      if (totalSamplesRef.current % 10 === 0) {
+        setSampleCount(totalSamplesRef.current);
+      }
+
       if (onSensorSample) onSensorSample(sample);
 
       if (currentChunk.length >= 100) {
@@ -108,7 +118,7 @@ export const useMotionSensors = () => {
       }
     };
 
-    window.addEventListener('devicemotion', handleMotion);
+    window.addEventListener('devicemotion', handleMotion, true);
 
     // Watch Geolocation
     if (navigator.geolocation) {
@@ -132,7 +142,7 @@ export const useMotionSensors = () => {
     }
 
     return () => {
-      window.removeEventListener('devicemotion', handleMotion);
+      window.removeEventListener('devicemotion', handleMotion, true);
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
@@ -149,6 +159,7 @@ export const useMotionSensors = () => {
     currentData,
     dataPoints,
     gpsUpdates,
+    sampleCount,
     totalSamples: totalSamplesRef.current,
     hasAccelerometer,
     hasGyroscope,

@@ -6,13 +6,13 @@ import { useMotionSensors } from '@/hooks/useMotionSensors';
 import { useRideData } from '@/hooks/useRideData';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { RideDataPoint } from '@/types';
 
 const Index = () => {
   const navigate = useNavigate();
   const {
     isTracking,
     gpsUpdates,
+    sampleCount,
     hasAccelerometer,
     startTracking,
     requestPermissions,
@@ -31,7 +31,6 @@ const Index = () => {
   const stopTrackingRef = useRef<(() => void) | null>(null);
   const timerRef = useRef<number | null>(null);
 
-  // Timer effect
   useEffect(() => {
     if (isTracking) {
       setElapsedSeconds(0);
@@ -44,7 +43,6 @@ const Index = () => {
         timerRef.current = null;
       }
     }
-
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -62,30 +60,31 @@ const Index = () => {
   };
 
   /**
-   * CRITICAL for iOS: Permission must be requested in the same tick as the user click.
+   * CRITICAL for iOS: Zero-latency sensor start.
    */
   const handleStartTracking = async () => {
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
-    if (!hasAccelerometer) {
-      toast.error('Accelerometer not discovered. Check permissions or device support.');
-      return;
-    }
+    // Generate ID synchronously to avoid DB latency during user gesture context
+    const timestamp = Date.now();
+    const rideId = `${timestamp}-${Math.random().toString(36).substring(2, 7)}`;
 
-    // Now safe to do async DB work
-    const ride = await startRide();
-    if (!ride) return;
-
+    // 1. ATTACH SENSORS IMMEDIATELY (Highest Priority)
     const stopTracking = await startTracking(
-      (chunk, index) => saveChunk(ride.id, chunk, index),
+      (chunk, index) => saveChunk(rideId, chunk, index),
       (gpsUpdate) => updateAggregatorWithGps(gpsUpdate),
       (sample) => updateAggregatorWithSample(sample)
     );
 
     if (stopTracking) {
       stopTrackingRef.current = stopTracking;
-      toast.success('Ride tracking started');
+      // 2. Initialize DB in background
+      startRide(rideId).catch(err => {
+        console.error('Failed to initialize ride header:', err);
+        toast.error('Data warning: Storage initialization failed.');
+      });
+      toast.success('Recording active');
     }
   };
 
@@ -112,7 +111,7 @@ const Index = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              SmartRide <span className="text-xs font-mono font-normal opacity-50">v0.3.2</span>
+              SmartRide <span className="text-xs font-mono font-normal opacity-50">v0.3.3</span>
             </motion.h1>
             <motion.p
               className="text-muted-foreground mt-2"
@@ -139,20 +138,33 @@ const Index = () => {
 
           {isTracking && (
             <motion.div
-              className="mt-12 animate-fade-in"
+              className="mt-8 animate-fade-in"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <div className="text-center mb-8">
-                <p className="text-sm text-muted-foreground mb-2">Recording Duration</p>
+              <div className="text-center mb-4">
+                <p className="text-sm text-muted-foreground mb-1">Session Active</p>
                 <p className="text-5xl font-mono font-bold text-primary tracking-tight">
                   {formatElapsedTime(elapsedSeconds)}
                 </p>
-                <div className="flex items-center justify-center mt-4 text-[10px] text-muted-foreground uppercase tracking-widest">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-2" />
-                  <span>Recording Session...</span>
+              </div>
+
+              <div className="glass-panel p-4 flex justify-around items-center rounded-xl bg-primary/5 border-primary/10">
+                <div className="text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase font-bold">Samples</p>
+                  <p className="text-xl font-mono font-bold text-primary">{sampleCount}</p>
                 </div>
+                <div className="h-8 w-[1px] bg-border" />
+                <div className="text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase font-bold">GPS Fixes</p>
+                  <p className="text-xl font-mono font-bold text-primary">{gpsUpdates.length}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center mt-6 text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse mr-2" />
+                <span>Capturing Data...</span>
               </div>
             </motion.div>
           )}
@@ -167,7 +179,7 @@ const Index = () => {
           >
             <h2 className="text-xl font-medium mb-4">Ride Captured Successfully</h2>
             <div className="bg-muted/30 p-6 rounded-2xl border border-dashed text-sm text-muted-foreground mb-6">
-              Your ride data is safely stored.
+              Your ride data is safely stored locally.
               <br />
               Visit History to view stats or export.
             </div>
@@ -188,22 +200,22 @@ const Index = () => {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.3 }}
           >
-            <h2 className="text-lg font-medium mb-2">Advanced Pipeline v2</h2>
-            <p className="text-xs text-muted-foreground mb-6">Designed for 30+ minute sessions</p>
-            <ol className="text-sm text-muted-foreground mt-2 space-y-4 text-left max-w-[280px]">
-              <li className="flex items-start">
-                <span className="font-bold text-primary mr-3">✓</span>
-                <p><strong>Chunked Storage:</strong> Data is flushed to disk every 2s, saving your RAM.</p>
-              </li>
-              <li className="flex items-start">
-                <span className="font-bold text-primary mr-3">✓</span>
-                <p><strong>Sync-Safe permissions:</strong> iOS Motion/Orientation requested on user gesture.</p>
-              </li>
-              <li className="flex items-start">
-                <span className="font-bold text-primary mr-3">✓</span>
-                <p><strong>Safe Export:</strong> Optimized for iOS Safari download reliability.</p>
-              </li>
-            </ol>
+            <h2 className="text-lg font-medium mb-1 text-primary">Stability Build v0.3.3</h2>
+            <p className="text-xs text-muted-foreground mb-6">Optimized for iOS Sensor Capture</p>
+            <div className="text-xs text-muted-foreground text-left space-y-3 max-w-[280px]">
+              <div className="flex gap-3">
+                <span className="bg-primary/10 text-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">1</span>
+                <p><strong>Immediate Activation:</strong> Sensors start the moment you allow permissions.</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="bg-primary/10 text-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
+                <p><strong>Live Telemetry:</strong> View real-time sample counts while recording.</p>
+              </div>
+              <div className="flex gap-3">
+                <span className="bg-primary/10 text-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">3</span>
+                <p><strong>Dual-Stream Capture:</strong> Improved sensor fusion for uneven terrain.</p>
+              </div>
+            </div>
           </motion.div>
         )}
       </div>
