@@ -8,7 +8,7 @@ import { useRideData } from '@/hooks/useRideData';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
-import { RideSession } from '@/types';
+import { RideSession, RideDetailsViewModel } from '@/types';
 
 const History = () => {
   const navigate = useNavigate();
@@ -19,7 +19,29 @@ const History = () => {
   } = useRideData();
 
   const handleViewDetails = React.useCallback((ride: RideSession) => {
-    navigate(`/history/${ride.id}`);
+    // PART 2: Build ViewModel explicitly
+    const viewModel: RideDetailsViewModel = {
+      rideId: ride.id,
+      createdAtIso: new Date(ride.startTime).toISOString(),
+      endedAtIso: ride.endTime ? new Date(ride.endTime).toISOString() : undefined,
+      durationSeconds: ride.metadata?.durationSeconds ?? ride.duration ?? 0,
+      distanceMeters: ride.metadata?.statsSummary?.gpsDistanceMeters ?? ride.distance,
+      smoothnessScore: ride.smoothnessScore,
+      smoothnessLabel: ride.metadata?.qualityFlags?.isStationaryLikely ? 'Stationary' : 'Valid',
+      statsSummary: ride.metadata?.statsSummary ? {
+        suddenStops: ride.metadata.counts?.totalEvents ? Math.floor(ride.metadata.counts.totalEvents / 2) : 0,
+        suddenAccelerations: ride.metadata.counts?.totalEvents ? Math.ceil(ride.metadata.counts.totalEvents / 2) : 0,
+        maxAbsAccel: ride.metadata.statsSummary.maxAbsAccel,
+        vibrationLevel: undefined // No raw vibrations in safe view
+      } : undefined,
+      qualityFlags: ride.metadata?.qualityFlags ? {
+        isGpsLikelyDuplicated: ride.metadata.qualityFlags.isGpsLikelyDuplicated,
+        hasLowGpsQuality: ride.metadata.qualityFlags.hasLowGpsQuality,
+        gpsQualityReason: ride.metadata.qualityFlags.gpsQualityReason
+      } : undefined
+    };
+
+    navigate(`/history/${ride.id}`, { state: { viewModel } });
   }, [navigate]);
 
   const handleDelete = React.useCallback((rideId: string) => {

@@ -68,5 +68,26 @@ export interface RideStats {
   distance: number;
 }
 
+export interface RideDetailsViewModel {
+  rideId: string;
+  createdAtIso: string;
+  endedAtIso?: string;
+  durationSeconds: number;
+  distanceMeters?: number;
+  smoothnessScore?: number;
+  smoothnessLabel?: string;
+  statsSummary?: {
+    suddenStops?: number;
+    suddenAccelerations?: number;
+    maxAbsAccel?: number;
+    vibrationLevel?: number;
+  };
+  qualityFlags?: {
+    isGpsLikelyDuplicated?: boolean;
+    hasLowGpsQuality?: boolean;
+    gpsQualityReason?: string;
+  };
+}
+
 // Re-export RideMetadata for convenience
 export type { RideMetadata } from '../lib/metadata';
