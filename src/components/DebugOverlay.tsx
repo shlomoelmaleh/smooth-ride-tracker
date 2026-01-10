@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { debugLog } from '@/lib/debugLog';
-import { X, Terminal, Trash2, ShieldInfo } from 'lucide-react';
-import { Button } from './ui/button';
+import { X, Terminal, Trash2, Info } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface DebugOverlayProps {
     isOpen: boolean;
@@ -63,7 +63,7 @@ const DebugOverlay: React.FC<DebugOverlayProps> = ({ isOpen, onClose, state }) =
             </div>
 
             <div className="mt-4 p-2 bg-primary/10 rounded flex items-center gap-2 text-[9px] text-primary/80">
-                <ShieldInfo size={12} />
+                <Info size={12} />
                 <span>Use this screen to diagnose storage or sensor issues on mobile.</span>
             </div>
         </div>

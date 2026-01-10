@@ -21,6 +21,7 @@ const Index = () => {
     rollingBuffer,
     motionStatus,
     gpsStatus,
+    hasAccelerometer,
     startTracking,
     requestPermissions,
   } = useMotionSensors();
