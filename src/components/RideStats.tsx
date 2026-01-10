@@ -106,14 +106,18 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
           </div>
           <div className="grid gap-2">
             <h2 className="text-sm font-semibold">Technical Info</h2>
-            <div className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1">
-              <p>ID: <span className="font-mono">{ride.id.slice(-8)}</span></p>
-              <p>Duration: {ride.metadata?.durationMs ? (ride.metadata.durationMs / 1000).toFixed(1) + 's' : 'N/A'}</p>
-              <p>Accel: {ride.metadata?.counts?.accelSamples ?? '0'} ({ride.metadata?.sampling?.accelerometerHz ?? '0'} Hz)</p>
-              <p>Gyro: {ride.metadata?.counts?.gyroSamples ?? '0'} ({ride.metadata?.sampling?.gyroscopeHz ?? '0'} Hz)</p>
-              <p>GPS Updates: {ride.metadata?.counts?.gpsUpdates ?? '0'} ({ride.metadata?.sampling?.gpsHz ?? '0'} Hz)</p>
-              <p>Dist: {ride.metadata?.statsSummary?.gpsDistanceMeters?.toFixed(1) ?? '0'} m</p>
-            </div>
+            {ride.metadata ? (
+              <div className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1">
+                <p>ID: <span className="font-mono">{ride.id.slice(-8)}</span></p>
+                <p>Duration: {ride.metadata.durationSeconds ? ride.metadata.durationSeconds.toFixed(1) + 's' : 'N/A'}</p>
+                <p>Accel: {ride.metadata.counts?.accelSamples ?? '0'} ({ride.metadata.sampling?.accelerometerHz ?? '0'} Hz)</p>
+                <p>Gyro: {ride.metadata.counts?.gyroSamples ?? '0'} ({ride.metadata.sampling?.gyroscopeHz ?? '0'} Hz)</p>
+                <p>GPS Updates: {ride.metadata.counts?.gpsUpdates ?? '0'} ({ride.metadata.sampling?.gpsHz ?? '0'} Hz)</p>
+                <p>Dist: {ride.metadata.statsSummary?.gpsDistanceMeters?.toFixed(1) ?? '0'} m</p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">Extended metadata unavailable</p>
+            )}
 
             {ride.metadata?.qualityFlags && (
               <div className="mt-2 space-y-1">
@@ -123,8 +127,8 @@ const RideStats: React.FC<RideStatsProps> = ({ ride, stats, onExport, isCompress
                 {ride.metadata.qualityFlags.hasLowGpsQuality && (
                   <p className="text-[10px] text-amber-500 font-medium">⚠️ Low GPS quality: {ride.metadata.qualityFlags.gpsQualityReason}</p>
                 )}
-                {ride.metadata.qualityFlags.dataIntegrity.hasGaps && (
-                  <p className="text-[10px] text-red-500 font-medium">❌ Signal integrity: {ride.metadata.qualityFlags.dataIntegrity.gapCount} gaps detected</p>
+                {ride.metadata.qualityFlags.dataIntegrity?.hasGaps && (
+                  <p className="text-[10px] text-red-500 font-medium">❌ Signal integrity issue: {ride.metadata.qualityFlags.dataIntegrity.gapCount} gaps</p>
                 )}
                 {ride.metadata.qualityFlags.isStationaryLikely && (
                   <p className="text-[10px] text-blue-500 font-medium">ℹ️ Ride appears to be stationary</p>

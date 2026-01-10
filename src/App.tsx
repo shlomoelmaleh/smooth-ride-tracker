@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Stats from "./pages/Stats";
 import History from "./pages/History";
 import NotFound from "./pages/NotFound";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
@@ -21,8 +22,16 @@ const App = () => (
         <AnimatePresence mode="wait">
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/stats" element={<Stats />} />
-            <Route path="/history" element={<History />} />
+            <Route path="/stats" element={
+              <ErrorBoundary>
+                <Stats />
+              </ErrorBoundary>
+            } />
+            <Route path="/history" element={
+              <ErrorBoundary>
+                <History />
+              </ErrorBoundary>
+            } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

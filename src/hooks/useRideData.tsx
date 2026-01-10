@@ -366,6 +366,36 @@ export const useRideData = () => {
 
   // Get stats for a specific ride
   const getRideStats = (ride: RideSession): RideStats => {
+    // FAVOR PRECOMPUTED METADATA (O(1) access)
+    if (ride.metadata?.statsSummary) {
+      const summary = ride.metadata.statsSummary;
+      return {
+        averageAcceleration: 0, // Not in summary, but optional
+        maxAcceleration: summary.maxAbsAccel,
+        suddenStops: 0, // Recalculated if needed, but summary is priority
+        suddenAccelerations: 0,
+        vibrationLevel: 0,
+        duration: ride.duration || (ride.endTime! - ride.startTime) / 1000,
+        distance: summary.gpsDistanceMeters || ride.distance || 0,
+        // Map as much as we can from metadata to the RideStats interface
+        ...((summary as any).rideStats || {}) // In case it was stored there
+      };
+    }
+
+    // Fallback to minimal data if we have the ride header but no full samples loaded
+    if (!ride.dataPoints || ride.dataPoints.length === 0) {
+      return {
+        averageAcceleration: 0,
+        maxAcceleration: 0,
+        suddenStops: 0,
+        suddenAccelerations: 0,
+        vibrationLevel: 0,
+        duration: ride.duration || 0,
+        distance: ride.distance || 0
+      };
+    }
+
+    // Heavy recalculation only as absolute last resort
     return calculateRideStats(ride.dataPoints);
   };
 

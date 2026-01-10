@@ -7,6 +7,7 @@ import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import RideStats from '@/components/RideStats';
+import { BarChart2 } from 'lucide-react';
 
 const Stats = () => {
   const navigate = useNavigate();
@@ -20,10 +21,11 @@ const Stats = () => {
     smoothnessDistribution: [] as { name: string, value: number }[],
     rideTimeline: [] as { date: string, smoothness: number, events: number }[]
   });
-  
+  const [showHeavyCharts, setShowHeavyCharts] = useState(false);
+
   const lastRide = rides.length > 0 ? rides[rides.length - 1] : null;
   const lastRideStats = lastRide ? getRideStats(lastRide) : null;
-  
+
   useEffect(() => {
     if (rides.length > 0) {
       const totalRides = rides.length;
@@ -31,7 +33,7 @@ const Stats = () => {
       let totalDuration = 0;
       let totalSmoothness = 0;
       let totalSuddenEvents = 0;
-      
+
       const smoothnessGroups = {
         'Very Smooth': 0,
         'Smooth': 0,
@@ -39,24 +41,27 @@ const Stats = () => {
         'Bumpy': 0,
         'Very Bumpy': 0
       };
-      
+
       const timelineData: { [key: string]: { smoothness: number, events: number, count: number } } = {};
-      
+
       rides.forEach(ride => {
-        const stats = getRideStats(ride);
-        
-        totalDistance += stats.distance;
-        totalDuration += stats.duration;
-        totalSmoothness += (ride.smoothnessScore || 0);
-        totalSuddenEvents += (stats.suddenStops + stats.suddenAccelerations);
-        
+        // USE PRECOMPUTED/LIGHTWEIGHT DATA ONLY
+        const distance = ride.metadata?.statsSummary?.gpsDistanceMeters || ride.distance || 0;
+        const duration = ride.metadata?.durationSeconds || ride.duration || 0;
         const score = ride.smoothnessScore || 0;
+        const events = (ride.metadata?.counts?.totalEvents || 0); // Simplified event count from metadata
+
+        totalDistance += distance;
+        totalDuration += duration;
+        totalSmoothness += score;
+        totalSuddenEvents += events;
+
         if (score >= 85) smoothnessGroups['Very Smooth']++;
         else if (score >= 70) smoothnessGroups['Smooth']++;
         else if (score >= 50) smoothnessGroups['Average']++;
         else if (score >= 30) smoothnessGroups['Bumpy']++;
         else smoothnessGroups['Very Bumpy']++;
-        
+
         const date = new Date(ride.startTime).toLocaleDateString();
         if (!timelineData[date]) {
           timelineData[date] = {
@@ -65,18 +70,18 @@ const Stats = () => {
             count: 0
           };
         }
-        
-        timelineData[date].smoothness += (ride.smoothnessScore || 0);
-        timelineData[date].events += (stats.suddenStops + stats.suddenAccelerations);
+
+        timelineData[date].smoothness += score;
+        timelineData[date].events += events;
         timelineData[date].count++;
       });
-      
+
       const timeline = Object.entries(timelineData).map(([date, data]) => ({
         date,
         smoothness: Math.round(data.smoothness / data.count),
         events: Math.round(data.events / data.count)
       })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
+
       setAggrStats({
         totalRides,
         totalDistance,
@@ -87,27 +92,27 @@ const Stats = () => {
         rideTimeline: timeline
       });
     }
-  }, [rides, getRideStats]);
-  
+  }, [rides]); // Removed getRideStats from deps to avoid unnecessary triggers
+
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes}m`;
     }
     return `${minutes}m`;
   };
-  
+
   const formatDistance = (meters: number): string => {
     if (meters < 1000) {
       return `${meters.toFixed(0)}m`;
     }
     return `${(meters / 1000).toFixed(2)}km`;
   };
-  
+
   const COLORS = ['#4ade80', '#22d3ee', '#fcd34d', '#fb923c', '#f87171'];
-  
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
@@ -123,12 +128,12 @@ const Stats = () => {
     }
     return null;
   };
-  
+
   if (rides.length === 0) {
     return (
       <Layout>
         <div className="max-w-md mx-auto text-center py-12">
-          <motion.div 
+          <motion.div
             className="glass-panel p-8 rounded-2xl"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -146,11 +151,11 @@ const Stats = () => {
       </Layout>
     );
   }
-  
+
   return (
     <Layout>
       <div className="w-full max-w-5xl mx-auto">
-        <motion.div 
+        <motion.div
           className="mb-8 text-center"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -161,24 +166,24 @@ const Stats = () => {
             Insights from {aggrStats.totalRides} recorded rides
           </p>
         </motion.div>
-        
+
         {lastRide && lastRideStats && (
-          <motion.div 
+          <motion.div
             className="mb-8"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            <RideStats 
-              ride={lastRide} 
-              stats={lastRideStats} 
-              onExport={() => exportRideData(lastRide)} 
+            <RideStats
+              ride={lastRide}
+              stats={lastRideStats}
+              onExport={() => exportRideData(lastRide)}
             />
           </motion.div>
         )}
-        
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
@@ -192,8 +197,8 @@ const Stats = () => {
               </CardContent>
             </Card>
           </motion.div>
-          
-          <motion.div 
+
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
@@ -207,8 +212,8 @@ const Stats = () => {
               </CardContent>
             </Card>
           </motion.div>
-          
-          <motion.div 
+
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
@@ -223,104 +228,123 @@ const Stats = () => {
             </Card>
           </motion.div>
         </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
+
+        {!showHeavyCharts ? (
+          <motion.div
+            className="glass-panel p-12 text-center rounded-2xl border-dashed border-2"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
           >
-            <Card>
-              <CardHeader>
-                <CardTitle>Ride Smoothness</CardTitle>
-                <CardDescription>Distribution of ride quality</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={aggrStats.smoothnessDistribution}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            <BarChart2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <h3 className="text-xl font-medium mb-2">Visual Analytics</h3>
+            <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+              Visualizing data for {aggrStats.totalRides} rides might be heavy on some devices.
+            </p>
+            <Button size="lg" onClick={() => setShowHeavyCharts(true)}>
+              Load Charts & Insights
+            </Button>
+          </motion.div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Ride Smoothness</CardTitle>
+                    <CardDescription>Distribution of ride quality</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={aggrStats.smoothnessDistribution}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {aggrStats.smoothnessDistribution.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<CustomTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Ride Timeline</CardTitle>
+                    <CardDescription>Smoothness score over time</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={aggrStats.rideTimeline}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis domain={[0, 100]} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="smoothness"
+                          name="Smoothness Score"
+                          stroke="#3b82f6"
+                          activeDot={{ r: 8 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Events Per Ride</CardTitle>
+                  <CardDescription>Sudden stops and accelerations</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={aggrStats.rideTimeline}
+                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                     >
-                      {aggrStats.smoothnessDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<CustomTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </motion.div>
-          
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-          >
-            <Card>
-              <CardHeader>
-                <CardTitle>Ride Timeline</CardTitle>
-                <CardDescription>Smoothness score over time</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={aggrStats.rideTimeline}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis domain={[0, 100]} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="smoothness"
-                      name="Smoothness Score"
-                      stroke="#3b82f6"
-                      activeDot={{ r: 8 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-        
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.6 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle>Events Per Ride</CardTitle>
-              <CardDescription>Sudden stops and accelerations</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={aggrStats.rideTimeline}
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Bar dataKey="events" name="Events" fill="#f59e0b" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </motion.div>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      <Bar dataKey="events" name="Events" fill="#f59e0b" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </>
+        )}
       </div>
     </Layout>
   );
