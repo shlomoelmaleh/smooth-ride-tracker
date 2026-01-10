@@ -1,3 +1,4 @@
+import { RideMetadata } from '../lib/metadata';
 
 export interface AccelerometerData {
   x: number;
@@ -48,13 +49,13 @@ export interface RideSession {
   startTime: number;
   endTime: number | null;
   dataPoints: RideDataPoint[];
-  gpsUpdates?: GpsUpdate[]; // The stream of raw GPS update events
+  gpsUpdates?: GpsUpdate[];
   smoothnessScore?: number;
   distance?: number;
   duration?: number;
   startBattery?: number;
   endBattery?: number;
-  metadata?: any;
+  metadata?: RideMetadata; // Now properly typed
 }
 
 export interface RideStats {
@@ -66,3 +67,6 @@ export interface RideStats {
   duration: number;
   distance: number;
 }
+
+// Re-export RideMetadata for convenience
+export type { RideMetadata } from '../lib/metadata';

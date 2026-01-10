@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { RideSession, RideStats, RideDataPoint, GpsUpdate } from '@/types';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
-import { buildRideMetadata } from '@/lib/metadata';
+import { buildRideMetadata, validateAndNormalizeMetadata, migrateMetadata } from '@/lib/metadata';
 import {
   saveRideToDB,
   getAllRidesFromDB,
@@ -198,8 +198,14 @@ export const useRideData = () => {
       const jsonContent = JSON.stringify(ride, null, 2);
       zip.file('ride.json', jsonContent);
 
-      // Metadata as meta.json
-      const metadata = ride.metadata || buildRideMetadata(ride);
+      // Metadata as meta.json (migrate and validate if needed)
+      let metadata = ride.metadata;
+      if (!metadata) {
+        metadata = buildRideMetadata(ride);
+      } else if (metadata.schemaVersion !== "1.3") {
+        metadata = migrateMetadata(metadata);
+      }
+      metadata = validateAndNormalizeMetadata(metadata);
       zip.file('meta.json', JSON.stringify(metadata, null, 2));
 
       const zipFilename = generateFilename(ride, 'zip');
@@ -275,8 +281,9 @@ export const useRideData = () => {
       endBattery: endBattery
     };
 
-    // Attach metadata
-    completedRide.metadata = buildRideMetadata(completedRide);
+    // Build and validate metadata
+    const rawMetadata = buildRideMetadata(completedRide);
+    completedRide.metadata = validateAndNormalizeMetadata(rawMetadata);
 
     // Save to DB
     try {
