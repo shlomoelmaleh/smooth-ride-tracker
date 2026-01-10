@@ -15,8 +15,8 @@ export const useMotionSensors = () => {
 
   const totalSamplesRef = useRef(0);
   const watchIdRef = useRef<number | null>(null);
+  const captureStartedRef = useRef(false);
 
-  // Check hardware availability on mount
   useEffect(() => {
     if ('DeviceMotionEvent' in window) setHasAccelerometer(true);
     if ('DeviceOrientationEvent' in window) setHasGyroscope(true);
@@ -24,39 +24,28 @@ export const useMotionSensors = () => {
   }, []);
 
   /**
-   * CRITICAL for iOS: Request permissions for Motion AND Orientation
-   * Reordered to start with Geolocation for better Safari behavior.
+   * CRITICAL for iOS: Permission Sequence
+   * 1. Motion Admission (Must be first to preserve gesture)
+   * 2. Orientation Admission
+   * 3. Geolocation (Most likely to block/wait, so we do it last)
    */
   const requestPermissions = async (): Promise<boolean> => {
-    try {
-      // 1. Geolocation Admission FIRST (All browsers)
-      // This is often the most intrusive/prompt-heavy, so we start here.
-      if (navigator.geolocation) {
-        const geoGranted = await new Promise<boolean>((resolve) => {
-          navigator.geolocation.getCurrentPosition(
-            () => resolve(true),
-            (err) => {
-              console.warn('Geolocation denied:', err);
-              toast.error('Location access denied. Ride will lack GPS coordinates.');
-              resolve(true); // Allow proceeding with sensors only if user wants
-            },
-            { timeout: 8000 }
-          );
-        });
-        if (!geoGranted) return false;
-      }
+    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+      toast.error('Motion sensors require HTTPS on iOS. Current protocol: ' + window.location.protocol);
+    }
 
-      // 2. Motion Admission (iOS 13+)
-      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+    try {
+      // 1. Motion Admission (iOS Safari 13+)
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof (DeviceMotionEvent as any).requestPermission === 'function') {
         const motionRes = await (DeviceMotionEvent as any).requestPermission();
         if (motionRes !== 'granted') {
-          toast.error('Motion sensor access denied.');
+          toast.error('Motion sensor access denied. Please enable in iOS Settings > Safari.');
           return false;
         }
       }
 
-      // 3. Orientation Admission (iOS 13+)
-      if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      // 2. Orientation Admission (iOS Safari 13+)
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
         const orientRes = await (DeviceOrientationEvent as any).requestPermission();
         if (orientRes !== 'granted') {
           toast.error('Orientation sensor access denied.');
@@ -64,10 +53,31 @@ export const useMotionSensors = () => {
         }
       }
 
+      // 3. Geolocation (All browsers)
+      if (navigator.geolocation) {
+        const geoGranted = await new Promise<boolean>((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            () => resolve(true),
+            (err) => {
+              console.warn('Geolocation denied/timeout:', err);
+              toast.error('Location timing out. Ride will continue with motion data only.');
+              resolve(true); // Allow proceeding
+            },
+            { timeout: 6000, enableHighAccuracy: true }
+          );
+        });
+        if (!geoGranted) return false;
+      }
+
       return true;
     } catch (error) {
       console.error('Permission request failed:', error);
-      toast.error('Hardware sensors unavailable.');
+      // Don't crash on Chrome iOS where requestPermission is missing
+      if (window.navigator.userAgent.indexOf('CriOS') > -1) {
+        toast.info('Chrome iOS detected. Standard sensor access attempted.');
+        return true;
+      }
+      toast.error('Hardware sensors failed to initialize.');
       return false;
     }
   };
@@ -80,14 +90,20 @@ export const useMotionSensors = () => {
     setIsTracking(true);
     setSampleCount(0);
     totalSamplesRef.current = 0;
+    captureStartedRef.current = false;
 
     let chunkIndex = 0;
     let currentChunk: RideDataPoint[] = [];
 
     const handleMotion = (event: DeviceMotionEvent) => {
-      // Robust check: Support both user acceleration and gravity fallback if device is moving
+      // Robust Capture: Try user acceleration, then gravity-included
       const accel = event.acceleration || event.accelerationIncludingGravity;
       if (!accel) return;
+
+      if (!captureStartedRef.current) {
+        captureStartedRef.current = true;
+        console.log('First motion sample received');
+      }
 
       const sample: RideDataPoint = {
         timestamp: Date.now(),
@@ -105,7 +121,6 @@ export const useMotionSensors = () => {
       currentChunk.push(sample);
       totalSamplesRef.current++;
 
-      // Update state sparingly to avoid UI lag, but enough to show life
       if (totalSamplesRef.current % 10 === 0) {
         setSampleCount(totalSamplesRef.current);
       }
@@ -118,7 +133,15 @@ export const useMotionSensors = () => {
       }
     };
 
+    // Use multiple event options for maximum compatibility
     window.addEventListener('devicemotion', handleMotion, true);
+
+    // Heartbeat check: If no data after 3s, alert the user
+    setTimeout(() => {
+      if (totalSamplesRef.current === 0) {
+        toast.warning('No sensor data receiving. Try re-opening the app in Safari if on iOS.');
+      }
+    }, 3000);
 
     // Watch Geolocation
     if (navigator.geolocation) {
@@ -137,7 +160,7 @@ export const useMotionSensors = () => {
           if (onGpsUpdate) onGpsUpdate(update);
         },
         (err) => console.error('GPS error:', err),
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
 
@@ -147,7 +170,6 @@ export const useMotionSensors = () => {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
       setIsTracking(false);
-      // Flush residual chunk
       if (currentChunk.length > 0) {
         onChunk(currentChunk, chunkIndex);
       }
