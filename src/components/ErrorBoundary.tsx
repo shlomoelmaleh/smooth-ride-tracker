@@ -49,7 +49,7 @@ class ErrorBoundary extends Component<Props, State> {
                     </div>
                     <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
                     <p className="text-muted-foreground mb-8 max-w-md">
-                        The application encountered an unexpected error. This usually happens when processing very large ride recordings.
+                        This ride summary could not be displayed safely.
                     </p>
                     <div className="flex flex-wrap gap-4 justify-center">
                         <Button onClick={this.handleRetry} variant="outline" className="flex items-center gap-2">
