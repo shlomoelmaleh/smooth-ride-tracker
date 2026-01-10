@@ -1,12 +1,13 @@
 import { buildRideMetadata, RideMetadata } from './metadata';
 import { RideSession } from '../types';
+import { validateTimezoneInversion, validateGpsRateComputation } from './metadataValidation';
 
 /**
  * A minimal runtime sanity check utility for Metadata.
  * Can be imported and called in dev mode to verify logic.
  */
 export function runMetadataSanityCheck() {
-    console.log("--- Starting Metadata Sanity Check ---");
+    console.log("--- Starting Metadata Sanity Check (v1.3) ---");
 
     const mockRide: RideSession = {
         id: "1736282000000-abcde",
@@ -30,14 +31,23 @@ export function runMetadataSanityCheck() {
         const meta = buildRideMetadata(mockRide);
 
         const checks = [
-            { name: "Schema Version", pass: meta.schemaVersion === "1.2" },
+            { name: "Schema Version", pass: meta.schemaVersion === "1.3" },
             { name: "ID Strategy", pass: meta.idStrategy === "timestamp-ms + random-suffix" },
             { name: "Duration Seconds", pass: meta.durationSeconds === 60 },
             { name: "Accel Hz", pass: Math.round(meta.sampling.accelerometerHz) === 10 },
             { name: "GPS Native Hz", pass: meta.sampling.gps.nativeHz > 0 },
+            { name: "GPS Rate Method", pass: meta.sampling.gps.rateEstimateMethod === "updates/duration" },
+            { name: "GPS Rate Confidence", pass: meta.sampling.gps.rateConfidence === "low" },
+            { name: "Timezone Inversion", pass: validateTimezoneInversion(meta) },
+            { name: "GPS Rate Computation", pass: validateGpsRateComputation(meta) },
+            { name: "Expected DtMs", pass: meta.processing.integrityRules.expectedDtMs > 0 },
+            { name: "Min Gap Ms", pass: meta.processing.integrityRules.minGapMs === 150 },
             { name: "Percentiles", pass: meta.statsSummary.maxAbsAccelContext.p95 !== null },
             { name: "Data Integrity", pass: !meta.qualityFlags.dataIntegrity.hasGaps },
-            { name: "Privacy Declaration", pass: meta.privacy.intendedUse === "aggregated-analysis-only" }
+            { name: "GPS Quality Reason Enum", pass: ["good", "urban-canyon", "no-fix", "low-accuracy", "unknown"].includes(meta.qualityFlags.gpsQualityReason) },
+            { name: "Phone Stability Enum", pass: ["stable", "mixed", "unstable", "unknown"].includes(meta.qualityFlags.phoneStability) },
+            { name: "Privacy Declaration", pass: meta.privacy.intendedUse === "aggregated-analysis-only" },
+            { name: "Display Summary", pass: meta.display.summaryReason.length > 0 }
         ];
 
         checks.forEach(c => {

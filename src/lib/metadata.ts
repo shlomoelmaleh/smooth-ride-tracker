@@ -19,7 +19,12 @@ export interface RideMetadata {
     endedAtIso: string;
     durationMs: number;
     durationSeconds: number;
-    timezoneOffsetMinutes: number; // Positive = West of UTC (JS convention)
+
+    // Timezone (unambiguous)
+    jsTimezoneOffsetMinutes: number; // JavaScript Date.getTimezoneOffset() value (e.g., Israel = -120)
+    utcOffsetMinutes: number; // Always equal to -jsTimezoneOffsetMinutes (e.g., Israel = +120)
+    /** @deprecated Use jsTimezoneOffsetMinutes or utcOffsetMinutes instead */
+    timezoneOffsetMinutes: number; // Legacy field, same as jsTimezoneOffsetMinutes
 
     // Application
     app: {
@@ -51,11 +56,15 @@ export interface RideMetadata {
         sensorRateHz: number;
         accelerometerHz: number;
         gyroscopeHz?: number;
-        gpsHz: number; // Actual: gpsUpdates / durationSeconds
+        gpsHz: number; // Always computed as: gpsUpdates / durationSeconds
         gps: {
             nativeHz: number;
             replicatedToSensorRate: boolean;
             replicationMode: "repeat-last";
+            // Machine-readable GPS rate explanation
+            rateEstimateMethod: "updates/duration";
+            expectedRangeHz: [number, number]; // e.g., [0.2, 1.2]
+            rateConfidence: "low" | "medium" | "high";
         };
         earthFrameEnabled?: boolean;
     };
@@ -93,8 +102,10 @@ export interface RideMetadata {
             params: Record<string, any> | null;
         };
         integrityRules: {
-            gapThresholdMultiplier: number;
-            dropoutThresholdMs: number;
+            expectedDtMs: number; // Computed as 1000 / sensorRateHz
+            gapThresholdMultiplier: number; // e.g., 2.0
+            minGapMs: number; // e.g., 150 - minimum threshold to avoid false positives
+            dropoutThresholdMs: number; // e.g., 5000
         };
     };
 
@@ -117,12 +128,12 @@ export interface RideMetadata {
         isGpsLikelyDuplicated: boolean;
         isStationaryLikely: boolean;
         hasLowGpsQuality: boolean;
-        gpsQualityReason: "urban-canyon" | "low-fix-confidence" | "permission-denied" | "unknown";
-        phoneStability: "stable" | "unstable" | "unknown";
+        gpsQualityReason: "good" | "urban-canyon" | "no-fix" | "low-accuracy" | "unknown";
+        phoneStability: "stable" | "mixed" | "unstable" | "unknown";
         dataIntegrity: {
-            hasGaps: boolean;
-            gapCount: number;
-            dropoutCount: number;
+            hasGaps: boolean; // True only if meaningful gaps exist (not 1-sample jitter)
+            gapCount: number; // Always present, even if 0
+            dropoutCount: number; // Always present, even if 0
         };
     };
 
@@ -234,11 +245,13 @@ function getHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: nu
 
 /**
  * Helper: Detect gaps and dropouts in sensor data
+ * A gap is counted only if BOTH thresholds are exceeded to avoid false positives
  */
 function checkDataIntegrity(
     dataPoints: RideDataPoint[],
     expectedHz: number,
     gapThresholdMultiplier: number = 2.0,
+    minGapMs: number = 150,
     dropoutThresholdMs: number = 5000
 ) {
     if (dataPoints.length < 2 || expectedHz <= 0) {
@@ -255,7 +268,8 @@ function checkDataIntegrity(
 
         if (delta > dropoutThresholdMs) {
             dropoutCount++;
-        } else if (delta > gapThreshold) {
+        } else if (delta > gapThreshold && delta > minGapMs) {
+            // Count as gap only if BOTH thresholds exceeded
             gapCount++;
         }
     }
@@ -270,15 +284,17 @@ function checkDataIntegrity(
 /**
  * Helper: Calculate phone stability from acceleration variance
  */
-function calculatePhoneStability(accelMagnitudes: number[]): "stable" | "unstable" | "unknown" {
+function calculatePhoneStability(accelMagnitudes: number[]): "stable" | "mixed" | "unstable" | "unknown" {
     if (accelMagnitudes.length < 10) return "unknown";
 
     const mean = accelMagnitudes.reduce((sum, val) => sum + val, 0) / accelMagnitudes.length;
     const variance = accelMagnitudes.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / accelMagnitudes.length;
     const stdDev = Math.sqrt(variance);
 
-    // Threshold: 2.0 m/s² standard deviation
-    return stdDev < 2.0 ? "stable" : "unstable";
+    // Thresholds: < 1.5 = stable, 1.5-3.0 = mixed, > 3.0 = unstable
+    if (stdDev < 1.5) return "stable";
+    if (stdDev < 3.0) return "mixed";
+    return "unstable";
 }
 
 /**
@@ -291,13 +307,13 @@ function generateSummaryReason(meta: Partial<RideMetadata>): string {
     if (!flags || !stats) return "נסיעה הושלמה בהצלחה";
 
     // Priority 1: GPS Issues
-    if (flags.gpsQualityReason === "permission-denied") {
+    if (flags.gpsQualityReason === "no-fix") {
         return "לא ניתן גישה ל-GPS — נתוני מיקום חסרים";
     }
     if (flags.gpsQualityReason === "urban-canyon") {
         return "GPS חלש (Urban Canyon) — נתוני מיקום פחות אמינים";
     }
-    if (flags.gpsQualityReason === "low-fix-confidence") {
+    if (flags.gpsQualityReason === "low-accuracy") {
         return "דיוק GPS נמוך — נתוני מיקום משוערים";
     }
 
@@ -352,8 +368,17 @@ export function buildRideMetadata(
     const gyroHz = gyroSamples > 0 ? Number((gyroSamples / durationSec).toFixed(2)) : 0;
     const gpsHz = Number((actualGpsUpdates / durationSec).toFixed(3));
 
+    // GPS rate confidence
+    let gpsRateConfidence: "low" | "medium" | "high" = "low";
+    if (actualGpsUpdates > 30) {
+        gpsRateConfidence = "high";
+    } else if (actualGpsUpdates >= 15) {
+        gpsRateConfidence = "medium";
+    }
+
     // Data Integrity
-    const integrity = checkDataIntegrity(dataPoints, accelHz);
+    const minGapMs = 150;
+    const integrity = checkDataIntegrity(dataPoints, accelHz, 2.0, minGapMs, 5000);
 
     // Device Info
     const { osName, osMajor, browserName, browserVersion } = getDeviceInfo();
@@ -381,7 +406,7 @@ export function buildRideMetadata(
 
             if (p2.accuracy > 50) {
                 hasLowGpsQuality = true;
-                gpsQualityReason = 'low-fix-confidence';
+                gpsQualityReason = 'low-accuracy';
             }
 
             const d = getHaversineDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
@@ -396,10 +421,14 @@ export function buildRideMetadata(
             totalDistanceMeters += d;
         }
     } else if (actualGpsUpdates === 0 && gpsSnapshots === 0) {
-        gpsQualityReason = 'permission-denied';
+        gpsQualityReason = 'no-fix';
     }
 
     const avgSpeedMps = durationSec > 0 ? totalDistanceMeters / durationSec : 0;
+
+    // Timezone fields
+    const jsTimezoneOffset = new Date().getTimezoneOffset();
+    const utcOffset = -jsTimezoneOffset;
 
     // Build metadata object
     const metadata: RideMetadata = {
@@ -412,7 +441,9 @@ export function buildRideMetadata(
         endedAtIso: new Date(endEpochMs).toISOString(),
         durationMs,
         durationSeconds: Number(durationSec.toFixed(3)),
-        timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+        jsTimezoneOffsetMinutes: jsTimezoneOffset,
+        utcOffsetMinutes: utcOffset,
+        timezoneOffsetMinutes: jsTimezoneOffset, // Legacy field
         app: {
             name: "Smooth Ride Tracker",
             version: appVersion,
@@ -438,7 +469,10 @@ export function buildRideMetadata(
             gps: {
                 nativeHz: gpsHz,
                 replicatedToSensorRate: true,
-                replicationMode: "repeat-last"
+                replicationMode: "repeat-last",
+                rateEstimateMethod: "updates/duration",
+                expectedRangeHz: [0.2, 1.2],
+                rateConfidence: gpsRateConfidence
             },
             earthFrameEnabled: dataPoints.some(p => !!p.earth),
         },
@@ -468,7 +502,9 @@ export function buildRideMetadata(
                 params: null
             },
             integrityRules: {
+                expectedDtMs: accelHz > 0 ? Number((1000 / accelHz).toFixed(2)) : 0,
                 gapThresholdMultiplier: 2.0,
+                minGapMs: 150,
                 dropoutThresholdMs: 5000
             }
         },
@@ -487,7 +523,7 @@ export function buildRideMetadata(
             isGpsLikelyDuplicated: gpsSnapshots > 0 && actualGpsUpdates <= Math.max(2, durationSec * 0.1),
             isStationaryLikely: durationSec > 30 && (totalDistanceMeters < 30 || avgSpeedMps < 0.5),
             hasLowGpsQuality: hasLowGpsQuality || (actualGpsUpdates < 3 && durationSec > 60),
-            gpsQualityReason,
+            gpsQualityReason: hasLowGpsQuality ? gpsQualityReason : (actualGpsUpdates >= 3 ? "good" : gpsQualityReason),
             phoneStability,
             dataIntegrity: integrity,
         },
@@ -586,13 +622,50 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             meta.display.summaryReason = generateSummaryReason(meta);
         }
 
-        // Ensure processing.integrityRules exists
+        // Ensure processing.integrityRules has all required fields
         if (!meta.processing) meta.processing = {};
         if (!meta.processing.integrityRules) {
+            const sensorHz = meta.sampling?.sensorRateHz || 10;
             meta.processing.integrityRules = {
+                expectedDtMs: sensorHz > 0 ? Number((1000 / sensorHz).toFixed(2)) : 100,
                 gapThresholdMultiplier: 2.0,
+                minGapMs: 150,
                 dropoutThresholdMs: 5000
             };
+        } else {
+            // Ensure all fields exist
+            const sensorHz = meta.sampling?.sensorRateHz || 10;
+            if (typeof meta.processing.integrityRules.expectedDtMs === 'undefined') {
+                meta.processing.integrityRules.expectedDtMs = sensorHz > 0 ? Number((1000 / sensorHz).toFixed(2)) : 100;
+            }
+            if (typeof meta.processing.integrityRules.minGapMs === 'undefined') {
+                meta.processing.integrityRules.minGapMs = 150;
+            }
+        }
+
+        // Ensure timezone fields exist
+        if (typeof meta.jsTimezoneOffsetMinutes === 'undefined') {
+            const jsOffset = meta.timezoneOffsetMinutes ?? new Date().getTimezoneOffset();
+            meta.jsTimezoneOffsetMinutes = jsOffset;
+            meta.utcOffsetMinutes = -jsOffset;
+            meta.timezoneOffsetMinutes = jsOffset;
+        }
+        if (typeof meta.utcOffsetMinutes === 'undefined') {
+            meta.utcOffsetMinutes = -meta.jsTimezoneOffsetMinutes;
+        }
+
+        // Ensure GPS sampling fields exist
+        if (meta.sampling?.gps) {
+            if (!meta.sampling.gps.rateEstimateMethod) {
+                meta.sampling.gps.rateEstimateMethod = "updates/duration";
+            }
+            if (!meta.sampling.gps.expectedRangeHz) {
+                meta.sampling.gps.expectedRangeHz = [0.2, 1.2];
+            }
+            if (!meta.sampling.gps.rateConfidence) {
+                const gpsUpdates = meta.counts?.gpsUpdates || 0;
+                meta.sampling.gps.rateConfidence = gpsUpdates > 30 ? "high" : gpsUpdates >= 15 ? "medium" : "low";
+            }
         }
 
         // Ensure qualityFlags.phoneStability exists
@@ -623,6 +696,8 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
             endedAtIso: new Date().toISOString(),
             durationMs: 0,
             durationSeconds: 0,
+            jsTimezoneOffsetMinutes: new Date().getTimezoneOffset(),
+            utcOffsetMinutes: -new Date().getTimezoneOffset(),
             timezoneOffsetMinutes: new Date().getTimezoneOffset(),
             app: { name: "Smooth Ride Tracker", version: PKG_VERSION },
             device: {
@@ -635,7 +710,14 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
                 sensorRateHz: 0,
                 accelerometerHz: 0,
                 gpsHz: 0,
-                gps: { nativeHz: 0, replicatedToSensorRate: true, replicationMode: "repeat-last" }
+                gps: {
+                    nativeHz: 0,
+                    replicatedToSensorRate: true,
+                    replicationMode: "repeat-last",
+                    rateEstimateMethod: "updates/duration",
+                    expectedRangeHz: [0, 2],
+                    rateConfidence: "low"
+                }
             },
             counts: {
                 accelSamples: 0,
@@ -653,7 +735,12 @@ export function validateAndNormalizeMetadata(meta: any): RideMetadata {
                 earthFrameEnabled: false,
                 gravityRemoved: true,
                 smoothing: { type: "none", window: null, params: null },
-                integrityRules: { gapThresholdMultiplier: 2.0, dropoutThresholdMs: 5000 }
+                integrityRules: {
+                    expectedDtMs: 100,
+                    gapThresholdMultiplier: 2.0,
+                    minGapMs: 150,
+                    dropoutThresholdMs: 5000
+                }
             },
             statsSummary: {
                 maxAbsAccel: 0,
