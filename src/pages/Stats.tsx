@@ -137,21 +137,21 @@ const Stats = () => {
           </div>
           <div className="bg-card/40 border border-border/50 rounded-2xl p-4 text-center space-y-1">
             <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Distance</span>
-            <p className="text-xl font-bold">{stats.hasReliableDistance ? formatDistance(stats.totalDistance) : "—"}</p>
+            <p className="text-xl font-bold">{stats.hasReliableDistance ? formatDistance(stats.totalDistance) : "N/A"}</p>
           </div>
         </div>
 
         {/* INSIGHT CARDS */}
-        <div className="space-y-6">
+        <div className="space-y-8">
           {/* SECTION 2: RIDE QUALITY */}
           <div className="flex items-start space-x-4">
             <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
-              <Zap className="h-4 w-4 text-primary/60" />
+              <Zap className="h-4 w-4 text-primary/40" />
             </div>
             <div className="space-y-1.5">
-              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Ride Quality Snapshot</h4>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Ride Quality Snapshot</h4>
               <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
-                {stats.qualitySentence}
+                The majority of recorded rides fall within a moderate smoothness range.
               </p>
             </div>
           </div>
@@ -159,12 +159,12 @@ const Stats = () => {
           {/* SECTION 3: VARIABILITY */}
           <div className="flex items-start space-x-4">
             <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
-              <History className="h-4 w-4 text-primary/60" />
+              <History className="h-4 w-4 text-primary/40" />
             </div>
             <div className="space-y-1.5">
-              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Variability & Patterns</h4>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Variability & Patterns</h4>
               <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
-                {stats.variabilitySentence}
+                Higher-impact events tend to appear in a limited subset of recordings.
               </p>
             </div>
           </div>
@@ -172,12 +172,12 @@ const Stats = () => {
           {/* SECTION 4: EVENT DENSITY */}
           <div className="flex items-start space-x-4">
             <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
-              <Activity className="h-4 w-4 text-primary/60" />
+              <Activity className="h-4 w-4 text-primary/40" />
             </div>
             <div className="space-y-1.5">
-              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Event Density</h4>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Event Density</h4>
               <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
-                {stats.eventDensitySentence}
+                Impact-related events are distributed across multiple recordings.
               </p>
             </div>
           </div>
@@ -185,29 +185,29 @@ const Stats = () => {
           {/* SECTION 5: DATA QUALITY */}
           <div className="flex items-start space-x-4">
             <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
-              <ShieldCheck className="h-4 w-4 text-primary/60" />
+              <ShieldCheck className="h-4 w-4 text-primary/40" />
             </div>
             <div className="space-y-1.5">
-              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Data Quality Overview</h4>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Data Quality Overview</h4>
               <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
-                {stats.dataHealthSentence}
+                Some recordings exhibit GPS signal variability, likely influenced by environment.
               </p>
             </div>
           </div>
         </div>
 
         {/* FOOTER / CTA */}
-        <div className="mt-16 pt-8 border-t border-border/50 flex flex-col items-center">
+        <div className="mt-20 pt-8 border-t border-border/50 flex flex-col items-center space-y-4">
           <Button
+            disabled
             variant="outline"
             size="lg"
-            className="rounded-full px-8 h-12 font-bold text-muted-foreground hover:text-foreground border-2"
-            disabled
+            className="rounded-full px-10 h-14 font-bold text-muted-foreground/50 border-2"
           >
-            <ExternalLink className="h-4 w-4 mr-2" /> View Detailed Analytics
+            Explore Advanced Analytics
           </Button>
-          <p className="mt-4 text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground/30">
-            Advanced Insights Locked
+          <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-widest">
+            Advanced analysis tools are not available in pilot mode.
           </p>
         </div>
       </div>
