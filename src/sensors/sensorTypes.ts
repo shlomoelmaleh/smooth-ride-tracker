@@ -76,6 +76,10 @@ export interface StreamHealth {
     dtMsP95: number | null;
     lastSampleAgeMs: number | null;
     missingRate?: number;
+    // Expanded GPS stats
+    accuracyMedianM?: number | null;
+    accuracyP95M?: number | null;
+    speedMedian?: number | null;
 }
 
 export interface CollectionHealth {

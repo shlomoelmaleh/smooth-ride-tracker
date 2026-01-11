@@ -77,7 +77,7 @@ export const startCollectors = (options: CollectorOptions) => {
                 altitude: pos.coords.altitude,
                 timestamp: pos.timestamp
             };
-            gpsMonitor.record(Date.now());
+            gpsMonitor.record(Date.now(), { accuracy: pos.coords.accuracy, speed: pos.coords.speed });
         },
         (err) => console.warn('GPS Collector Error:', err),
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
