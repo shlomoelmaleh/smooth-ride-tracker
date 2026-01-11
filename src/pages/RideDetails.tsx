@@ -6,40 +6,39 @@ import {
     Calendar,
     Clock,
     Activity,
-    AlertTriangle,
+    AlertCircle,
     ShieldCheck,
     MapPin,
-    ArrowLeft
+    Zap,
+    ChevronDown
 } from 'lucide-react';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion";
 import { RideDetailsViewModel } from '@/types';
 
-/**
- * RideDetails: STRICT SAFE SUMMARY VIEW.
- * Physically decoupled from raw sensor data, processing, and heavy libraries.
- * Receives data via React Router state (RideDetailsViewModel).
- */
 const RideDetails = () => {
     const location = useLocation();
     const navigate = useNavigate();
-
-    // PART 3: RECEIVE ONLY VIEWMODEL
     const viewModel = location.state?.viewModel as RideDetailsViewModel | undefined;
 
     if (!viewModel) {
         return (
             <Layout>
                 <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4 px-4 text-center">
-                    <AlertTriangle className="h-12 w-12 text-amber-500 mb-2" />
+                    <AlertCircle className="h-12 w-12 text-amber-500 mb-2" />
                     <h2 className="text-xl font-bold">Ride summary unavailable</h2>
                     <p className="text-muted-foreground text-sm max-w-xs">
                         The requested summary could not be retrieved safely or has expired.
                     </p>
-                    <Button onClick={() => navigate('/history')} className="mt-4">
-                        <ArrowLeft className="h-4 w-4 mr-2" />
+                    <Button onClick={() => navigate('/history')} className="mt-4 rounded-full">
+                        <ChevronLeft className="h-4 w-4 mr-2" />
                         Back to History
                     </Button>
                 </div>
@@ -47,22 +46,26 @@ const RideDetails = () => {
         );
     }
 
-    const formatTime = (iso?: string) => {
-        if (!iso) return "—";
-        try {
-            return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        } catch {
-            return "—";
-        }
-    };
-
     const formatDate = (iso?: string) => {
         if (!iso) return "—";
         try {
-            return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-        } catch {
-            return "—";
-        }
+            return new Date(iso).toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        } catch { return "—"; }
+    };
+
+    const formatTime = (iso?: string) => {
+        if (!iso) return "—";
+        try {
+            return new Date(iso).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+        } catch { return "—"; }
     };
 
     const formatDuration = (seconds?: number) => {
@@ -74,129 +77,118 @@ const RideDetails = () => {
 
     const formatDistance = (meters?: number) => {
         if (meters === undefined) return "—";
-        return (meters / 1000).toFixed(2);
+        if (meters < 1000) return `${Math.round(meters)} m`;
+        return `${(meters / 1000).toFixed(1)} km`;
+    };
+
+    const getHealthMessage = () => {
+        if (viewModel.qualityFlags?.hasLowGpsQuality) {
+            return "Urban environment – minor GPS noise detected";
+        }
+        return "Good signal quality throughout the ride";
     };
 
     return (
         <Layout>
-            <div className="w-full max-w-xl mx-auto space-y-6 pb-20 px-4 pt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex items-center justify-between">
-                    <Button variant="ghost" size="sm" onClick={() => navigate('/history')} className="-ml-2">
+            <div className="w-full max-w-lg mx-auto pb-20 px-6 pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+
+                {/* HEADER */}
+                <div className="mb-10 space-y-4">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate('/history')}
+                        className="-ml-2 text-muted-foreground hover:text-foreground"
+                    >
                         <ChevronLeft className="h-4 w-4 mr-1" />
-                        History
+                        Back to History
                     </Button>
-                    <Badge variant="outline" className="font-mono text-[10px] opacity-70">
-                        ID: {viewModel.rideId.slice(-8)}
-                    </Badge>
+
+                    <div className="space-y-1">
+                        <h1 className="text-3xl font-bold tracking-tight">Ride Details</h1>
+                        <div className="flex items-center text-sm font-medium text-muted-foreground/60 space-x-2">
+                            <span>{formatDate(viewModel.createdAtIso)}</span>
+                            <span>•</span>
+                            <span>{formatTime(viewModel.createdAtIso)}</span>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-bold tracking-tight">Ride Summary</h1>
-                    <p className="text-muted-foreground flex items-center text-sm">
-                        <Calendar className="h-3.5 w-3.5 mr-1.5" />
-                        {formatDate(viewModel.createdAtIso)}
+                {/* SECTION 1: RIDE OVERVIEW (ABOVE THE FOLD) */}
+                <Card className="border-none shadow-2xl shadow-primary/5 bg-card/40 backdrop-blur-sm ring-1 ring-border/50 rounded-[2rem] overflow-hidden mb-6">
+                    <CardContent className="p-8">
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="flex flex-col items-center space-y-2 text-center">
+                                <Clock className="h-5 w-5 text-muted-foreground/30" />
+                                <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Duration</span>
+                                <p className="text-lg font-bold tracking-tight">{formatDuration(viewModel.durationSeconds)}</p>
+                            </div>
+                            <div className="flex flex-col items-center space-y-2 text-center">
+                                <MapPin className="h-5 w-5 text-muted-foreground/30" />
+                                <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Distance</span>
+                                <p className="text-lg font-bold tracking-tight">{formatDistance(viewModel.distanceMeters)}</p>
+                            </div>
+                            <div className="flex flex-col items-center space-y-2 text-center">
+                                <Zap className="h-5 w-5 text-muted-foreground/30" />
+                                <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Smoothness</span>
+                                <p className="text-lg font-bold tracking-tight">{Math.round(viewModel.smoothnessScore || 0)}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* SECTION 2: DATA HEALTH */}
+                <div className="px-4 py-3 bg-muted/30 rounded-2xl flex items-center space-x-3 mb-8">
+                    <ShieldCheck className="h-4 w-4 text-emerald-500/60" />
+                    <p className="text-xs font-medium text-muted-foreground/80 leading-relaxed">
+                        {getHealthMessage()}
                     </p>
                 </div>
 
-                {/* PRIMARY METRICS CARD */}
-                <Card className="border-none shadow-sm ring-1 ring-border">
-                    <CardHeader className="pb-4">
-                        <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Performance</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid grid-cols-2 gap-6">
-                        <div className="space-y-1">
-                            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest flex items-center">
-                                <Clock className="h-3 w-3 mr-1" /> Duration
-                            </span>
-                            <p className="text-xl font-mono font-bold">{formatDuration(viewModel.durationSeconds)}</p>
-                        </div>
-                        <div className="space-y-1">
-                            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest flex items-center">
-                                <MapPin className="h-3 w-3 mr-1" /> Distance
-                            </span>
-                            <p className="text-xl font-mono font-bold">
-                                {formatDistance(viewModel.distanceMeters)} <span className="text-xs">km</span>
-                            </p>
-                        </div>
-                        <div className="space-y-1">
-                            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest flex items-center">
-                                <Activity className="h-3 w-3 mr-1" /> Smoothness
-                            </span>
-                            <p className="text-xl font-mono font-bold">
-                                {viewModel.smoothnessScore ?? "—"}<span className="text-xs font-normal opacity-50">/100</span>
-                            </p>
-                        </div>
-                        <div className="space-y-1">
-                            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest flex items-center">
-                                <ShieldCheck className="h-3 w-3 mr-1" /> Quality
-                            </span>
-                            <p className="text-lg font-bold">
-                                {viewModel.smoothnessLabel ?? "Unknown"}
-                            </p>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* SAFETY & INSIGHTS */}
-                <Card className="border-none shadow-sm ring-1 ring-border bg-muted/20">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-bold flex items-center">
-                            <Activity className="h-4 w-4 mr-2 text-primary" />
-                            Events Detected
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3 pt-2">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-muted-foreground">Sudden Stops</span>
-                            <span className="font-mono font-bold">{viewModel.statsSummary?.suddenStops ?? 0}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-muted-foreground">Sudden Accel.</span>
-                            <span className="font-mono font-bold">{viewModel.statsSummary?.suddenAccelerations ?? 0}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm pt-2 border-t border-border/50">
-                            <span className="text-muted-foreground">Max G-Force</span>
-                            <span className="font-mono font-bold">
-                                {viewModel.statsSummary?.maxAbsAccel ? (viewModel.statsSummary.maxAbsAccel / 9.81).toFixed(2) : "—"} g
-                            </span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* DATA INTEGRITY */}
-                {viewModel.qualityFlags && (
-                    <Card className="border-none shadow-sm ring-1 ring-border">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Data Health</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2 pb-4">
-                            {viewModel.qualityFlags.hasLowGpsQuality ? (
-                                <div className="flex items-center space-x-2 text-amber-600 bg-amber-50 p-2 rounded-md text-xs">
-                                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                                    <span>Signal Quality: {viewModel.qualityFlags.gpsQualityReason ?? "Degraded"}</span>
-                                </div>
+                {/* SECTION 3: RIDE EVENTS (COLLAPSIBLE) */}
+                <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="events" className="border-none">
+                        <AccordionTrigger className="hover:no-underline px-4 py-4 bg-card/20 hover:bg-card/40 rounded-2xl ring-1 ring-border/40 transition-all [&[data-state=open]>svg]:rotate-180">
+                            <div className="flex items-center space-x-3">
+                                <Activity className="h-4 w-4 text-muted-foreground/40" />
+                                <span className="text-sm font-bold tracking-tight">Ride Events</span>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="pt-4 px-6 pb-6 space-y-4">
+                            {viewModel.statsSummary ? (
+                                <>
+                                    <p className="text-sm text-muted-foreground font-medium leading-relaxed">
+                                        {(viewModel.statsSummary.suddenStops || 0) + (viewModel.statsSummary.suddenAccelerations || 0) > 0
+                                            ? "Several sudden movements detected during transit."
+                                            : "No notable events detected during this ride."}
+                                    </p>
+                                    <div className="flex items-center space-x-6">
+                                        <div className="space-y-1">
+                                            <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Max Impact</span>
+                                            <p className="text-base font-bold">
+                                                {viewModel.statsSummary.maxAbsAccel
+                                                    ? `${Math.round(viewModel.statsSummary.maxAbsAccel / 9.81)} g`
+                                                    : "—"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </>
                             ) : (
-                                <div className="flex items-center space-x-2 text-green-600 bg-green-50 p-2 rounded-md text-xs">
-                                    <ShieldCheck className="h-4 w-4 shrink-0" />
-                                    <span>GPS Satellite Lock: Strong</span>
-                                </div>
+                                <p className="text-sm text-muted-foreground italic">No notable events detected</p>
                             )}
-                            {viewModel.qualityFlags.isGpsLikelyDuplicated && (
-                                <p className="text-[10px] text-muted-foreground italic px-1">
-                                    * High-latency signal detected during recording
-                                </p>
-                            )}
-                        </CardContent>
-                    </Card>
-                )}
+                        </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
 
-                <div className="pt-4">
-                    <p className="text-center text-[10px] text-muted-foreground uppercase tracking-widest font-medium">
+                <div className="py-12 flex flex-col items-center space-y-2 opacity-20">
+                    <ShieldCheck className="h-4 w-4" />
+                    <span className="text-[10px] uppercase font-black tracking-widest text-center">
                         End of Summary
-                    </p>
+                    </span>
                 </div>
             </div>
         </Layout>
     );
 };
+
 export default RideDetails;

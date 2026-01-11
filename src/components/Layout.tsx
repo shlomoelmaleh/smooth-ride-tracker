@@ -18,7 +18,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </main>
       <footer className="text-center text-xs text-muted-foreground py-4 space-y-1">
         <p>SmartRide &copy; {new Date().getFullYear()} | Privacy Focused Ride Tracking | v{pkg.version}</p>
-        <p className="opacity-50 font-mono text-[9px]">Build: {new Date('2026-01-11T12:30:00+02:00').toISOString()}</p>
+        <p className="opacity-50 font-mono text-[9px]">Build: {new Date('2026-01-11T13:30:00+02:00').toISOString()}</p>
       </footer>
     </div>
   );
