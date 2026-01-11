@@ -1,3 +1,4 @@
+import { UnifiedSampleV2, CollectionHealth, CapabilitiesReport } from '../sensors/sensorTypes';
 import { RideMetadata } from '../lib/metadata';
 
 export interface AccelerometerData {
@@ -27,13 +28,7 @@ export interface EarthAcceleration {
   z: number;
 }
 
-export interface RideDataPoint {
-  accelerometer: AccelerometerData;
-  gyroscope: GyroscopeData | null;
-  location: LocationData | null;
-  earth: EarthAcceleration | null;
-  timestamp: number;
-}
+export type RideDataPoint = UnifiedSampleV2;
 
 export type RideEventType = 'stop' | 'acceleration' | 'impact' | 'turn' | 'other';
 
@@ -65,7 +60,10 @@ export interface RideSession {
   duration?: number;
   startBattery?: number;
   endBattery?: number;
-  metadata?: RideMetadata; // Now properly typed
+  metadata?: RideMetadata & {
+    collectionHealth?: CollectionHealth;
+    capabilities?: CapabilitiesReport;
+  };
 }
 
 export interface RideStats {

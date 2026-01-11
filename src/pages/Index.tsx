@@ -27,11 +27,11 @@ const Index = () => {
   const {
     isTracking,
     currentData,
+    collectionHealth,
     hasAccelerometer,
     hasGeolocation,
     startTracking,
-    stopTracking,
-    gpsUpdates
+    stopTracking
   } = useMotionSensors();
 
   const {
@@ -44,7 +44,6 @@ const Index = () => {
 
   const [completedRide, setCompletedRide] = useState<any>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const intervalRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
 
   // Status mapping logic
@@ -82,51 +81,50 @@ const Index = () => {
 
   const gpsStatus = useMemo(() => {
     if (!hasGeolocation) return { label: 'No signal', color: 'text-red-500 bg-red-500/10', icon: Navigation };
-    if (isTracking && gpsUpdates.length === 0) return { label: 'Finding...', color: 'text-amber-500 bg-amber-500/10', icon: Navigation };
-    if (isTracking) return { label: 'Locked', color: 'text-green-500 bg-green-500/10', icon: Navigation };
+    if (isTracking && !collectionHealth?.gps?.samplesCount) return { label: 'Finding...', color: 'text-amber-500 bg-amber-500/10', icon: Navigation };
+    if (isTracking) return { label: `${collectionHealth?.gps?.observedHz || 0} Hz`, color: 'text-green-500 bg-green-500/10', icon: Navigation };
     return { label: 'Ready', color: 'text-blue-500 bg-blue-500/10', icon: Navigation };
-  }, [hasGeolocation, isTracking, gpsUpdates]);
+  }, [hasGeolocation, isTracking, collectionHealth]);
 
   const motionStatus = useMemo(() => {
     if (!hasAccelerometer) return { label: 'Unavailable', color: 'text-red-500 bg-red-500/10', icon: Activity };
-    if (isTracking && currentData) return { label: 'Active', color: 'text-green-500 bg-green-500/10', icon: Activity };
+    if (isTracking && collectionHealth?.motion) return { label: `${collectionHealth.motion.observedHz} Hz`, color: 'text-green-500 bg-green-500/10', icon: Activity };
     return { label: 'Ready', color: 'text-blue-500 bg-blue-500/10', icon: Activity };
-  }, [hasAccelerometer, isTracking, currentData]);
+  }, [hasAccelerometer, isTracking, collectionHealth]);
 
   const samplingStatus = useMemo(() => {
     if (!hasAccelerometer) return { label: 'Insufficient', color: 'text-red-500 bg-red-500/10', icon: Zap };
-    if (isTracking) return { label: 'Stable', color: 'text-green-500 bg-green-500/10', icon: Zap };
+    if (isTracking) {
+      const jitter = collectionHealth?.motion?.dtMsP95 || 0;
+      return { label: jitter > 50 ? 'Jittery' : 'Stable', color: jitter > 50 ? 'text-amber-500 bg-amber-500/10' : 'text-green-500 bg-green-500/10', icon: Zap };
+    }
     return { label: 'Standby', color: 'text-slate-500 bg-slate-500/10', icon: Zap };
-  }, [hasAccelerometer, isTracking]);
+  }, [hasAccelerometer, isTracking, collectionHealth]);
 
   const microcopy = useMemo(() => {
     if (!hasAccelerometer) return "Motion sensors required to track ride quality.";
     if (!hasGeolocation) return "GPS unavailable — distance will not be recorded.";
-    if (isTracking && gpsUpdates.length === 0) return "Waiting for GPS satellite lock...";
+    if (isTracking && !collectionHealth?.gps?.samplesCount) return "Waiting for GPS satellite lock...";
     if (isTracking) return "All systems look good. Recording in progress.";
     if (completedRide) return "Ride safely stored on this device.";
     return "Place phone in a stable position for best results.";
-  }, [hasAccelerometer, hasGeolocation, isTracking, gpsUpdates, completedRide]);
+  }, [hasAccelerometer, hasGeolocation, isTracking, collectionHealth, completedRide]);
 
   const handleStartTracking = async () => {
-    const intervalId = await startTracking();
-    if (intervalId) {
+    const success = await startTracking();
+    if (success) {
       await startRide();
-      intervalRef.current = intervalId as unknown as number;
       setCompletedRide(null);
       toast.success('Recording started');
     }
   };
 
   const handleStopTracking = async () => {
-    if (intervalRef.current !== null) {
-      const { dataPoints: finalData, gpsUpdates: finalGps } = stopTracking(intervalRef.current);
-      intervalRef.current = null;
-      const completed = await endRide(finalData, finalGps);
-      if (completed) {
-        setCompletedRide(completed);
-        toast.success('Ride captured');
-      }
+    const { dataPoints, gpsUpdates, collectionHealth: finalHealth, capabilities: finalCaps } = stopTracking();
+    const completed = await endRide(dataPoints, gpsUpdates, finalHealth || undefined, finalCaps || undefined);
+    if (completed) {
+      setCompletedRide(completed);
+      toast.success('Ride captured');
     }
   };
 

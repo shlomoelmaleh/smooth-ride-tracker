@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { RideSession, RideStats, RideDataPoint, GpsUpdate } from '@/types';
+import { CollectionHealth, CapabilitiesReport } from '@/sensors/sensorTypes';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
 import { buildRideMetadata, validateAndNormalizeMetadata, migrateMetadata } from '@/lib/metadata';
@@ -262,7 +263,7 @@ export const useRideData = () => {
   };
 
   // End the current ride and save it
-  const endRide = async (dataPoints: RideDataPoint[], gpsUpdates: GpsUpdate[]) => {
+  const endRide = async (dataPoints: RideDataPoint[], gpsUpdates: GpsUpdate[], health?: CollectionHealth, caps?: CapabilitiesReport) => {
     if (!currentRide) return null;
 
     const endTime = Date.now();
@@ -284,7 +285,11 @@ export const useRideData = () => {
 
     // Build and validate metadata
     const rawMetadata = buildRideMetadata(completedRide);
-    completedRide.metadata = validateAndNormalizeMetadata(rawMetadata);
+    completedRide.metadata = {
+      ...validateAndNormalizeMetadata(rawMetadata),
+      collectionHealth: health,
+      capabilities: caps
+    };
 
     // Save to DB
     try {
