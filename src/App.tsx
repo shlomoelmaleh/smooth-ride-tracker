@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Stats from "./pages/Stats";
 import History from "./pages/History";
 import RideDetails from "./pages/RideDetails";
+import Audit from "./pages/Audit";
 import NotFound from "./pages/NotFound";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -36,6 +37,11 @@ const App = () => (
             <Route path="/history/:rideId" element={
               <ErrorBoundary>
                 <RideDetails />
+              </ErrorBoundary>
+            } />
+            <Route path="/audit" element={
+              <ErrorBoundary>
+                <Audit />
               </ErrorBoundary>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

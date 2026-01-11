@@ -24,6 +24,9 @@ const Header: React.FC = () => {
           <NavLink to="/stats" currentPath={location.pathname}>
             Stats
           </NavLink>
+          <NavLink to="/audit" currentPath={location.pathname}>
+            Audit
+          </NavLink>
         </nav>
 
         <nav className="flex sm:hidden">
@@ -31,6 +34,7 @@ const Header: React.FC = () => {
             <MobileNavLink to="/" currentPath={location.pathname} label="Home" />
             <MobileNavLink to="/history" currentPath={location.pathname} label="History" />
             <MobileNavLink to="/stats" currentPath={location.pathname} label="Stats" />
+            <MobileNavLink to="/audit" currentPath={location.pathname} label="Audit" />
           </div>
         </nav>
       </div>
