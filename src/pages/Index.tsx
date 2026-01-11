@@ -1,90 +1,93 @@
-import { useState, useRef, useEffect } from 'react';
+
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Navigation,
+  Zap,
+  Activity,
+  Loader2,
+  Eye,
+  Download,
+  Play,
+  Square,
+  RefreshCw,
+  ShieldCheck
+} from 'lucide-react';
 import Layout from '@/components/Layout';
-import RideButton from '@/components/RideButton';
-import RideStats from '@/components/RideStats';
 import { useMotionSensors } from '@/hooks/useMotionSensors';
 import { useRideData } from '@/hooks/useRideData';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const Index = () => {
   const navigate = useNavigate();
   const {
     isTracking,
     currentData,
-    dataPoints,
     hasAccelerometer,
+    hasGeolocation,
     startTracking,
-    stopTracking
+    stopTracking,
+    gpsUpdates
   } = useMotionSensors();
 
   const {
     currentRide,
     startRide,
-    updateRideData,
     endRide,
     exportRideData,
-    getRideStats,
     isCompressing
   } = useRideData();
 
   const [completedRide, setCompletedRide] = useState<any>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const intervalRef = useRef<number | null>(null);
-  const timerRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (isTracking && currentRide) {
-      updateRideData(dataPoints);
-    }
-  }, [isTracking, dataPoints, currentRide, updateRideData]);
+  // Status mapping logic
+  const systemState = useMemo(() => {
+    if (isCompressing) return 'Saving ride...';
+    if (isTracking) return 'Recording...';
+    if (completedRide) return 'Ride saved';
+    return 'Ready to record';
+  }, [isTracking, isCompressing, completedRide]);
 
-  // Timer effect
-  useEffect(() => {
-    if (isTracking) {
-      setElapsedSeconds(0);
-      timerRef.current = window.setInterval(() => {
-        setElapsedSeconds(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
+  const gpsStatus = useMemo(() => {
+    if (!hasGeolocation) return { label: 'No signal', color: 'text-red-500 bg-red-500/10', icon: Navigation };
+    if (isTracking && gpsUpdates.length === 0) return { label: 'Finding...', color: 'text-amber-500 bg-amber-500/10', icon: Navigation };
+    if (isTracking) return { label: 'Locked', color: 'text-green-500 bg-green-500/10', icon: Navigation };
+    return { label: 'Available', color: 'text-blue-500 bg-blue-500/10', icon: Navigation };
+  }, [hasGeolocation, isTracking, gpsUpdates]);
 
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isTracking]);
+  const motionStatus = useMemo(() => {
+    if (!hasAccelerometer) return { label: 'Unavailable', color: 'text-red-500 bg-red-500/10', icon: Activity };
+    if (isTracking && currentData) return { label: 'Active', color: 'text-green-500 bg-green-500/10', icon: Activity };
+    return { label: 'Ready', color: 'text-blue-500 bg-blue-500/10', icon: Activity };
+  }, [hasAccelerometer, isTracking, currentData]);
 
-  const formatElapsedTime = (seconds: number): string => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return [
-      hrs.toString().padStart(2, '0'),
-      mins.toString().padStart(2, '0'),
-      secs.toString().padStart(2, '0')
-    ].join(':');
-  };
+  const samplingStatus = useMemo(() => {
+    if (!hasAccelerometer) return { label: 'Insufficient', color: 'text-red-500 bg-red-500/10', icon: Zap };
+    if (isTracking) return { label: 'Stable', color: 'text-green-500 bg-green-500/10', icon: Zap };
+    return { label: 'Standby', color: 'text-slate-500 bg-slate-500/10', icon: Zap };
+  }, [hasAccelerometer, isTracking]);
+
+  const microcopy = useMemo(() => {
+    if (!hasAccelerometer) return "Motion sensors required to track ride quality.";
+    if (!hasGeolocation) return "GPS unavailable — distance will not be recorded.";
+    if (isTracking && gpsUpdates.length === 0) return "Waiting for GPS satellite lock...";
+    if (isTracking) return "All systems look good. Recording in progress.";
+    if (completedRide) return "Ride safely stored on this device.";
+    return "Place phone in a stable position for best results.";
+  }, [hasAccelerometer, hasGeolocation, isTracking, gpsUpdates, completedRide]);
 
   const handleStartTracking = async () => {
-    // Start the ride session first
-
-    // Attempt to start tracking (requests permissions)
     const intervalId = await startTracking();
-
     if (intervalId) {
-      await startRide(); // Only start the ride if we actually got permissions/started tracking
+      await startRide();
       intervalRef.current = intervalId as unknown as number;
-      toast.success('Ride tracking started');
-    } else {
-      // If it returned false, it means permission denied or error
-      // toast is already handled in startTracking
+      setCompletedRide(null);
+      toast.success('Recording started');
     }
   };
 
@@ -92,147 +95,143 @@ const Index = () => {
     if (intervalRef.current !== null) {
       const { dataPoints: finalData, gpsUpdates: finalGps } = stopTracking(intervalRef.current);
       intervalRef.current = null;
-
       const completed = await endRide(finalData, finalGps);
       if (completed) {
         setCompletedRide(completed);
-        toast.success('Ride completed and saved');
+        toast.success('Ride captured');
       }
-    }
-  };
-
-  const handleExport = () => {
-    if (completedRide) {
-      exportRideData(completedRide);
     }
   };
 
   return (
     <Layout>
-      <div className="max-w-md mx-auto">
-        <div className="text-center mb-8 animate-fade-in">
-          <div className="glass-panel mx-auto mb-6 p-6">
-            <motion.h1
-              className="text-3xl font-semibold text-balance"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              SmartRide
-            </motion.h1>
-            <motion.p
-              className="text-muted-foreground mt-2"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              Track ride quality during transit
-            </motion.p>
-          </div>
+      <div className="flex flex-col items-center justify-center min-h-[80vh] px-6 max-w-lg mx-auto overflow-hidden">
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3, delay: 0.2 }}
-          >
-            <RideButton
-              isTracking={isTracking}
-              onStart={handleStartTracking}
-              onStop={handleStopTracking}
-              hasRequiredSensors={hasAccelerometer}
-            />
-          </motion.div>
-
-          {isTracking && (
-            <motion.div
-              className="mt-6 animate-fade-in"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Recording Duration</p>
-                    <p className="text-4xl font-mono font-bold text-primary mb-4">
-                      {formatElapsedTime(elapsedSeconds)}
-                    </p>
-                    <div className="flex justify-center items-center space-x-2 text-xs text-muted-foreground">
-                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                      <span>Tracking motion & location</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+        {/* HEADER */}
+        <div className="text-center mb-12 space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">SmartRide</h1>
+          <p className="text-xs uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Pilot Mode</p>
         </div>
 
-        {completedRide && !isTracking && (
-          <motion.div
-            className="mt-8"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <h2 className="text-xl font-medium mb-4 text-center">Last Ride Summary</h2>
-            <RideStats
-              ride={completedRide}
-              stats={getRideStats(completedRide)}
-              onExport={handleExport}
-              isCompressing={isCompressing}
-            />
+        {/* MAIN STATUS CARD */}
+        <Card className="w-full border-none shadow-2xl shadow-primary/5 bg-card/50 backdrop-blur-xl ring-1 ring-border/50 rounded-[2.5rem] overflow-hidden">
+          <CardContent className="p-8 space-y-8">
 
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => navigate('/history')}
-                className="text-primary underline text-sm"
-              >
-                View all rides
-              </button>
+            {/* LARGE STATE TEXT */}
+            <div className="text-center py-4">
+              <AnimatePresence mode="wait">
+                <motion.h2
+                  key={systemState}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="text-2xl font-bold tracking-tight"
+                >
+                  {systemState}
+                </motion.h2>
+              </AnimatePresence>
             </div>
-          </motion.div>
-        )}
 
-        {!isTracking && !completedRide && (
-          <motion.div
-            className="flex flex-col items-center justify-center text-center px-4 py-8 glass-panel"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <h2 className="text-lg font-medium mb-2">How it works</h2>
-            <ol className="text-sm text-muted-foreground mt-2 space-y-3 text-left">
-              <li className="flex items-start">
-                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
-                  <span className="text-xs font-medium text-primary">1</span>
+            {/* SENSOR STATUS BAR */}
+            <div className="flex justify-between gap-2">
+              {[gpsStatus, motionStatus, samplingStatus].map((status, i) => (
+                <div key={i} className={`flex-1 flex flex-col items-center p-3 rounded-2xl ${status.color.split(' ')[1]} transition-colors duration-500`}>
+                  <status.icon className={`h-4 w-4 mb-2 ${status.color.split(' ')[0]}`} />
+                  <span className="text-[9px] uppercase font-black tracking-widest opacity-50 mb-0.5">
+                    {i === 0 ? 'GPS' : i === 1 ? 'Motion' : 'Sampling'}
+                  </span>
+                  <span className={`text-[10px] font-bold whitespace-nowrap ${status.color.split(' ')[0]}`}>
+                    {status.label}
+                  </span>
                 </div>
-                <p>Press START when you begin your transit journey</p>
-              </li>
-              <li className="flex items-start">
-                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
-                  <span className="text-xs font-medium text-primary">2</span>
-                </div>
-                <p>Keep your phone in a stable position (pocket or bag)</p>
-              </li>
-              <li className="flex items-start">
-                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
-                  <span className="text-xs font-medium text-primary">3</span>
-                </div>
-                <p>Press STOP when you complete your journey</p>
-              </li>
-              <li className="flex items-start">
-                <div className="bg-primary/10 rounded-full w-6 h-6 flex items-center justify-center mr-2 mt-0.5">
-                  <span className="text-xs font-medium text-primary">4</span>
-                </div>
-                <p>Review your ride quality stats and insights</p>
-              </li>
-            </ol>
-            <p className="text-xs text-muted-foreground mt-4">
-              All data remains on your device unless exported
+              ))}
+            </div>
+
+            {/* MICROCOPY */}
+            <p className="text-center text-xs text-muted-foreground/80 font-medium leading-relaxed">
+              {microcopy}
             </p>
-          </motion.div>
-        )}
+          </CardContent>
+        </Card>
+
+        {/* ACTION AREA */}
+        <div className="w-full mt-10 flex flex-col items-center space-y-4">
+          <AnimatePresence mode="wait">
+            {!isTracking && !completedRide && !isCompressing && (
+              <motion.div key="idle" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="w-full">
+                <Button
+                  size="lg"
+                  onClick={handleStartTracking}
+                  className="w-full h-16 rounded-full text-lg font-bold shadow-xl shadow-primary/20 bg-primary hover:bg-primary/90 transition-all"
+                >
+                  <Play className="mr-2 h-5 w-5 fill-current" /> Start Recording
+                </Button>
+              </motion.div>
+            )}
+
+            {isTracking && (
+              <motion.div key="recording" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="w-full">
+                <Button
+                  size="lg"
+                  variant="destructive"
+                  onClick={handleStopTracking}
+                  className="w-full h-16 rounded-full text-lg font-bold shadow-xl shadow-destructive/20 animate-pulse-subtle"
+                >
+                  <Square className="mr-2 h-5 w-5 fill-current" /> Stop Tracking
+                </Button>
+              </motion.div>
+            )}
+
+            {isCompressing && (
+              <motion.div key="saving" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="w-full">
+                <Button
+                  disabled
+                  size="lg"
+                  className="w-full h-16 rounded-full text-lg font-bold bg-muted text-muted-foreground"
+                >
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Saving...
+                </Button>
+              </motion.div>
+            )}
+
+            {completedRide && !isTracking && !isCompressing && (
+              <motion.div key="saved" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full space-y-3">
+                <Button
+                  size="lg"
+                  onClick={() => navigate(`/history/${completedRide.id}`)}
+                  className="w-full h-16 rounded-full text-lg font-bold shadow-xl shadow-primary/20"
+                >
+                  <Eye className="mr-2 h-5 w-5" /> View Details
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={() => exportRideData(completedRide)}
+                    className="flex-1 h-12 rounded-full font-bold"
+                  >
+                    <Download className="mr-2 h-4 w-4" /> Export
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    onClick={() => setCompletedRide(null)}
+                    className="flex-1 h-12 rounded-full font-bold text-muted-foreground"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" /> Reset
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* FOOTER */}
+        <div className="mt-12 opacity-40 flex items-center space-x-2">
+          <ShieldCheck className="h-3 w-3" />
+          <span className="text-[10px] uppercase tracking-widest font-bold">Privacy-first: data stays on your device.</span>
+        </div>
+
       </div>
     </Layout>
   );
