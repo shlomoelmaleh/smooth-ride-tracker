@@ -43,7 +43,9 @@ const Index = () => {
   } = useRideData();
 
   const [completedRide, setCompletedRide] = useState<any>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const intervalRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
 
   // Status mapping logic
   const systemState = useMemo(() => {
@@ -53,11 +55,36 @@ const Index = () => {
     return 'Ready to record';
   }, [isTracking, isCompressing, completedRide]);
 
+  // Timer effect
+  useEffect(() => {
+    if (isTracking) {
+      setElapsedSeconds(0);
+      timerRef.current = window.setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isTracking]);
+
+  const formatElapsedTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const gpsStatus = useMemo(() => {
     if (!hasGeolocation) return { label: 'No signal', color: 'text-red-500 bg-red-500/10', icon: Navigation };
     if (isTracking && gpsUpdates.length === 0) return { label: 'Finding...', color: 'text-amber-500 bg-amber-500/10', icon: Navigation };
     if (isTracking) return { label: 'Locked', color: 'text-green-500 bg-green-500/10', icon: Navigation };
-    return { label: 'Available', color: 'text-blue-500 bg-blue-500/10', icon: Navigation };
+    return { label: 'Ready', color: 'text-blue-500 bg-blue-500/10', icon: Navigation };
   }, [hasGeolocation, isTracking, gpsUpdates]);
 
   const motionStatus = useMemo(() => {
@@ -117,19 +144,30 @@ const Index = () => {
         <Card className="w-full border-none shadow-2xl shadow-primary/5 bg-card/50 backdrop-blur-xl ring-1 ring-border/50 rounded-[2.5rem] overflow-hidden">
           <CardContent className="p-8 space-y-8">
 
-            {/* LARGE STATE TEXT */}
-            <div className="text-center py-4">
+            {/* LARGE STATE TEXT & TIMER */}
+            <div className="text-center py-4 space-y-2">
               <AnimatePresence mode="wait">
-                <motion.h2
+                <motion.div
                   key={systemState}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="text-2xl font-bold tracking-tight"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
                 >
-                  {systemState}
-                </motion.h2>
+                  <h2 className="text-2xl font-bold tracking-tight">
+                    {systemState}
+                  </h2>
+                </motion.div>
               </AnimatePresence>
+
+              {isTracking && (
+                <motion.p
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-lg font-mono text-muted-foreground/60 tracking-wider"
+                >
+                  {formatElapsedTime(elapsedSeconds)}
+                </motion.p>
+              )}
             </div>
 
             {/* SENSOR STATUS BAR */}
@@ -195,7 +233,7 @@ const Index = () => {
             )}
 
             {completedRide && !isTracking && !isCompressing && (
-              <motion.div key="saved" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full space-y-3">
+              <motion.div key="saved" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full space-y-4">
                 <Button
                   size="lg"
                   onClick={() => navigate(`/history/${completedRide.id}`)}
@@ -203,22 +241,24 @@ const Index = () => {
                 >
                   <Eye className="mr-2 h-5 w-5" /> View Details
                 </Button>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={() => exportRideData(completedRide)}
-                    className="flex-1 h-12 rounded-full font-bold"
-                  >
-                    <Download className="mr-2 h-4 w-4" /> Export
-                  </Button>
+
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setCompletedRide(null)}
+                  className="w-full h-16 rounded-full text-lg font-bold border-2"
+                >
+                  <Play className="mr-2 h-5 w-5" /> Start new recording
+                </Button>
+
+                <div className="flex justify-center">
                   <Button
                     variant="ghost"
-                    size="lg"
-                    onClick={() => setCompletedRide(null)}
-                    className="flex-1 h-12 rounded-full font-bold text-muted-foreground"
+                    size="sm"
+                    onClick={() => exportRideData(completedRide)}
+                    className="text-muted-foreground hover:text-foreground font-bold"
                   >
-                    <RefreshCw className="mr-2 h-4 w-4" /> Reset
+                    <Download className="mr-2 h-4 w-4" /> Export Ride Data
                   </Button>
                 </div>
               </motion.div>
