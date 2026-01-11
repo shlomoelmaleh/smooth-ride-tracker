@@ -23,6 +23,8 @@ import pkg from '../../package.json';
 import { detectCapabilities, requestSensorPermissions } from '@/sensors/sensorRegistry';
 import { startCollectors } from '@/sensors/sensorCollector';
 import { CapabilitiesReport, CollectionHealth, StreamHealth, UnifiedSampleV2 } from '@/sensors/sensorTypes';
+import { createEngine } from '@/core';
+import { AnalyzeResultV1, CoreFrameV1 } from '@/core/types';
 
 const Audit = () => {
     const [permissions, setPermissions] = useState<{ motion: string, location: string }>({
@@ -39,9 +41,11 @@ const Audit = () => {
     const [liveHealth, setLiveHealth] = useState<CollectionHealth | null>(null);
     const [liveData, setLiveData] = useState<UnifiedSampleV2 | null>(null);
     const [testResults, setTestResults] = useState<CollectionHealth | null>(null);
+    const [analysisResult, setAnalysisResult] = useState<AnalyzeResultV1 | null>(null);
     const [flags, setFlags] = useState<string[]>([]);
 
     const collectorRef = useRef<{ stop: () => void } | null>(null);
+    const engineRef = useRef(createEngine());
 
     useEffect(() => {
         const checkInitial = async () => {
@@ -66,12 +70,32 @@ const Audit = () => {
         setTestProgress(0);
         setElapsedTime(0);
         setTestResults(null);
+        setAnalysisResult(null);
+        engineRef.current.reset();
 
         const duration = selectedDuration;
         const startAt = Date.now();
 
         const collector = startCollectors({
-            onSample: () => { },
+            onSample: (sample) => {
+                // Convert to CoreFrameV1 for engine
+                const frame: CoreFrameV1 = {
+                    schema: 1,
+                    timestamp: sample.timestamp,
+                    accG: sample.sensors.motion?.accelGravity || { x: 0, y: 0, z: 0 },
+                    linAcc: sample.sensors.motion?.accel,
+                    gyroRate: sample.sensors.motion?.rotationRate,
+                    gps: sample.sensors.gps ? {
+                        lat: sample.sensors.gps.lat,
+                        lon: sample.sensors.gps.lon,
+                        accuracy: sample.sensors.gps.accuracy,
+                        speed: sample.sensors.gps.speed,
+                        heading: sample.sensors.gps.heading,
+                        timestamp: sample.sensors.gps.timestamp
+                    } : undefined
+                };
+                engineRef.current.ingest(frame);
+            },
             onHealthUpdate: (health) => {
                 const now = Date.now();
                 const elapsed = now - startAt;
@@ -83,11 +107,27 @@ const Audit = () => {
                     setIsTesting(false);
                     setTestResults(health);
 
-                    // Extract flags from final health
+                    // Finalize Analysis
+                    if (capabilities) {
+                        engineRef.current.setCapabilities({
+                            deviceMotion: capabilities.deviceMotion,
+                            gps: capabilities.gps
+                        });
+                    }
+                    const analysis = engineRef.current.finalize();
+                    setAnalysisResult(analysis);
+
+                    // Extract flags from final health + analysis
                     const newFlags = [...(capabilities?.flags || [])];
                     if ((health.gps?.observedHz || 0) < 0.5) newFlags.push("Extremely low GPS update rate");
                     if (health.gps && health.gps.samplesCount < 3) newFlags.push("Insufficient GPS samples for reliable stats");
                     if ((health.motion?.dtMsP95 || 0) > (health.motion?.dtMsMedian || 1) * 4) newFlags.push("Severe sensor jitter profile");
+
+                    // Add engine flags
+                    analysis.flags.forEach(f => {
+                        const message = f.replace(/_/g, ' ');
+                        if (!newFlags.includes(message)) newFlags.push(message);
+                    });
 
                     setFlags([...new Set(newFlags)]);
                 }
@@ -270,12 +310,56 @@ const Audit = () => {
                                     <ResultCard label="Motion" health={testResults?.motion} />
                                     <ResultCard label="Orientation" health={testResults?.orientation} />
                                     <ResultCard label="GPS / Location" health={testResults?.gps} />
+                                </div>
 
-                                    <div className="col-span-2 space-y-2 pt-2">
-                                        <Button variant="ghost" onClick={runAuditTest} className="w-full text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/30 h-12 rounded-2xl">
-                                            Restart Profile
-                                        </Button>
+                                {/* Core Analysis v1 Section */}
+                                {analysisResult && (
+                                    <div className="space-y-4 pt-4 border-t border-primary/10">
+                                        <div className="flex items-center space-x-2">
+                                            <Activity className="h-4 w-4 text-primary opacity-40" />
+                                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/40">Core Analysis (v1)</h3>
+                                            <Badge variant="outline" className="text-[8px] font-bold opacity-30 px-1 leading-none rounded-md">BATCH</Badge>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="p-3 bg-primary/[0.03] rounded-2xl border border-primary/5 space-y-2">
+                                                <span className="text-[8px] font-black uppercase text-primary/40 tracking-tight">IMU High-Fidelity</span>
+                                                <div className="space-y-1">
+                                                    <MetricLine label="Accel RMS" val={analysisResult.imu.accelRms} u="m/s²" />
+                                                    <MetricLine label="Accel P95" val={analysisResult.imu.accelP95} u="m/s²" />
+                                                    <MetricLine label="Jerk RMS" val={analysisResult.imu.jerkRms} u="m/s³" />
+                                                    <MetricLine label="Jerk P95" val={analysisResult.imu.jerkP95} u="m/s³" />
+                                                </div>
+                                            </div>
+
+                                            <div className="p-3 bg-primary/[0.03] rounded-2xl border border-primary/5 space-y-2">
+                                                <span className="text-[8px] font-black uppercase text-primary/40 tracking-tight">Impact Detection</span>
+                                                <div className="flex items-baseline space-x-1">
+                                                    <span className="text-xl font-black text-primary/80">{analysisResult.impactEvents.length}</span>
+                                                    <span className="text-[9px] font-bold text-primary/40 uppercase">Events</span>
+                                                </div>
+                                                <div className="space-y-1 pt-1 max-h-[80px] overflow-y-auto pr-1 custom-scrollbar">
+                                                    {analysisResult.impactEvents.length > 0 ? (
+                                                        analysisResult.impactEvents.slice(0, 3).map((ev, i) => (
+                                                            <div key={i} className="text-[9px] font-bold py-1 border-b border-primary/5 last:border-0 flex justify-between items-center">
+                                                                <span className="text-primary/60">@{((ev.tPeak - analysisResult.impactEvents[0].tStart + 1) / 1000).toFixed(1)}s</span>
+                                                                <span className="font-mono text-primary/80">{ev.peakAcc}g</span>
+                                                                <span className="text-[8px] opacity-40 px-1 bg-primary/10 rounded">E:{ev.energyIndex}</span>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <div className="text-[9px] font-medium text-muted-foreground/30 italic py-2">No significant impacts</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
+                                )}
+
+                                <div className="space-y-2 pt-2">
+                                    <Button variant="ghost" onClick={runAuditTest} className="w-full text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/30 h-12 rounded-2xl">
+                                        Restart Profile
+                                    </Button>
                                 </div>
                             </div>
                         )}
@@ -419,5 +503,15 @@ const LiveMetric = ({ label, val, u }: { label: string, val: any, u: string }) =
         </div>
     );
 };
+
+const MetricLine = ({ label, val, u }: { label: string, val: number, u: string }) => (
+    <div className="flex justify-between items-baseline">
+        <span className="text-[8px] font-bold text-muted-foreground/50 uppercase">{label}</span>
+        <div className="flex items-baseline space-x-0.5">
+            <span className="text-xs font-black text-primary/70">{val}</span>
+            <span className="text-[8px] font-bold text-muted-foreground/30">{u}</span>
+        </div>
+    </div>
+);
 
 export default Audit;
