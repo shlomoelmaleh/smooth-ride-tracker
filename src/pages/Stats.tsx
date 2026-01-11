@@ -1,350 +1,215 @@
-import { useState, useEffect } from 'react';
+
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Clock,
+  MapPin,
+  History,
+  ShieldCheck,
+  Activity,
+  Zap,
+  ExternalLink
+} from 'lucide-react';
 import Layout from '@/components/Layout';
 import { useRideData } from '@/hooks/useRideData';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
-import RideStats from '@/components/RideStats';
-import { BarChart2 } from 'lucide-react';
 
 const Stats = () => {
   const navigate = useNavigate();
-  const { rides, getRideStats, exportRideData } = useRideData();
-  const [aggrStats, setAggrStats] = useState({
-    totalRides: 0,
-    totalDistance: 0,
-    totalDuration: 0,
-    avgSmoothness: 0,
-    avgSuddenEvents: 0,
-    smoothnessDistribution: [] as { name: string, value: number }[],
-    rideTimeline: [] as { date: string, smoothness: number, events: number }[]
-  });
-  const [showHeavyCharts, setShowHeavyCharts] = useState(false);
+  const { rides } = useRideData();
 
-  const lastRide = rides.length > 0 ? rides[rides.length - 1] : null;
-  const lastRideStats = lastRide ? getRideStats(lastRide) : null;
+  const stats = useMemo(() => {
+    if (rides.length === 0) return null;
 
-  useEffect(() => {
-    if (rides.length > 0) {
-      const totalRides = rides.length;
-      let totalDistance = 0;
-      let totalDuration = 0;
-      let totalSmoothness = 0;
-      let totalSuddenEvents = 0;
+    const totalRides = rides.length;
+    let totalTime = 0;
+    let totalDistance = 0;
+    let totalSmoothness = 0;
+    let ridesWithLowQuality = 0;
+    let ridesWithExtremeEvents = 0;
 
-      const smoothnessGroups = {
-        'Very Smooth': 0,
-        'Smooth': 0,
-        'Average': 0,
-        'Bumpy': 0,
-        'Very Bumpy': 0
-      };
+    rides.forEach(ride => {
+      totalTime += ride.metadata?.durationSeconds || ride.duration || 0;
+      totalDistance += ride.metadata?.statsSummary?.gpsDistanceMeters || ride.distance || 0;
+      totalSmoothness += ride.smoothnessScore || 0;
 
-      const timelineData: { [key: string]: { smoothness: number, events: number, count: number } } = {};
+      if (ride.metadata?.qualityFlags?.hasLowGpsQuality) {
+        ridesWithLowQuality++;
+      }
 
-      rides.forEach(ride => {
-        // USE PRECOMPUTED/LIGHTWEIGHT DATA ONLY
-        const distance = ride.metadata?.statsSummary?.gpsDistanceMeters || ride.distance || 0;
-        const duration = ride.metadata?.durationSeconds || ride.duration || 0;
-        const score = ride.smoothnessScore || 0;
-        const events = (ride.metadata?.counts?.totalEvents || 0); // Simplified event count from metadata
+      const events = (ride.metadata?.counts?.totalEvents || 0);
+      if (events > 10 || (ride.metadata?.statsSummary?.maxAbsAccel || 0) > 30) {
+        ridesWithExtremeEvents++;
+      }
+    });
 
-        totalDistance += distance;
-        totalDuration += duration;
-        totalSmoothness += score;
-        totalSuddenEvents += events;
+    const avgSmoothness = totalSmoothness / totalRides;
 
-        if (score >= 85) smoothnessGroups['Very Smooth']++;
-        else if (score >= 70) smoothnessGroups['Smooth']++;
-        else if (score >= 50) smoothnessGroups['Average']++;
-        else if (score >= 30) smoothnessGroups['Bumpy']++;
-        else smoothnessGroups['Very Bumpy']++;
+    // Logical Insights mapping
+    const qualitySentence = avgSmoothness >= 80
+      ? "Most rides show high-to-exceptional smoothness."
+      : avgSmoothness >= 60
+        ? "Most rides show medium-to-high smoothness."
+        : "Ride quality varies significantly across recordings.";
 
-        const date = new Date(ride.startTime).toLocaleDateString();
-        if (!timelineData[date]) {
-          timelineData[date] = {
-            smoothness: 0,
-            events: 0,
-            count: 0
-          };
-        }
+    const variabilitySentence = totalRides < 3
+      ? "Collecting more data to determine stability patterns."
+      : "Most extreme events are concentrated in a small number of rides.";
 
-        timelineData[date].smoothness += score;
-        timelineData[date].events += events;
-        timelineData[date].count++;
-      });
+    const eventDensitySentence = ridesWithExtremeEvents / totalRides > 0.3
+      ? "Notable impact events are present across several recordings."
+      : "High-impact events are rare across your recordings.";
 
-      const timeline = Object.entries(timelineData).map(([date, data]) => ({
-        date,
-        smoothness: Math.round(data.smoothness / data.count),
-        events: Math.round(data.events / data.count)
-      })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const dataHealthSentence = (ridesWithLowQuality / totalRides) < 0.2
+      ? "Overall data quality is good."
+      : "GPS noise present in several recordings.";
 
-      setAggrStats({
-        totalRides,
-        totalDistance,
-        totalDuration,
-        avgSmoothness: Math.round(totalSmoothness / totalRides),
-        avgSuddenEvents: Math.round(totalSuddenEvents / totalRides),
-        smoothnessDistribution: Object.entries(smoothnessGroups).map(([name, value]) => ({ name, value })),
-        rideTimeline: timeline
-      });
-    }
-  }, [rides]); // Removed getRideStats from deps to avoid unnecessary triggers
+    return {
+      totalRides,
+      totalTime,
+      totalDistance,
+      qualitySentence,
+      variabilitySentence,
+      eventDensitySentence,
+      dataHealthSentence,
+      hasReliableDistance: totalDistance > 0 && ridesWithLowQuality / totalRides < 0.5
+    };
+  }, [rides]);
 
-  const formatDuration = (seconds: number): string => {
+  const formatHours = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (hours === 0) return `${mins}m`;
+    return `${hours}h ${mins}m`;
   };
 
-  const formatDistance = (meters: number): string => {
-    if (meters < 1000) {
-      return `${meters.toFixed(0)}m`;
-    }
-    return `${(meters / 1000).toFixed(2)}km`;
-  };
-
-  const COLORS = ['#4ade80', '#22d3ee', '#fcd34d', '#fb923c', '#f87171'];
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white p-2 border rounded shadow-sm text-xs">
-          <p className="font-medium">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {entry.name}: {entry.value}
-            </p>
-          ))}
-        </div>
-      );
-    }
-    return null;
+  const formatDistance = (meters: number) => {
+    return `${(meters / 1000).toFixed(0)}km`;
   };
 
   if (rides.length === 0) {
     return (
       <Layout>
-        <div className="max-w-md mx-auto text-center py-12">
-          <motion.div
-            className="glass-panel p-8 rounded-2xl"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <h1 className="text-xl font-semibold mb-4">No Ride Data Yet</h1>
-            <p className="text-muted-foreground mb-6">
-              Start tracking your rides to see statistics and insights here.
+        <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center space-y-6">
+          <div className="h-20 w-20 rounded-full bg-muted/30 flex items-center justify-center">
+            <LayoutDashboard className="h-10 w-10 text-muted-foreground/20" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-xl font-bold">No Stats Ready</h3>
+            <p className="text-sm text-muted-foreground/60 max-w-[240px] mx-auto">
+              Complete a few rides to see aggregated insights here.
             </p>
-            <Button onClick={() => navigate('/')}>
-              Go to Home Page
-            </Button>
-          </motion.div>
+          </div>
+          <Button onClick={() => navigate('/')} className="rounded-full px-8 h-12 font-bold shadow-lg shadow-primary/10">
+            Go to Home
+          </Button>
         </div>
       </Layout>
     );
   }
 
+  if (!stats) return null;
+
   return (
     <Layout>
-      <div className="w-full max-w-5xl mx-auto">
-        <motion.div
-          className="mb-8 text-center"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <h1 className="text-2xl font-semibold">Your Ride Statistics</h1>
-          <p className="text-muted-foreground">
-            Insights from {aggrStats.totalRides} recorded rides
+      <div className="w-full max-w-lg mx-auto pb-20 px-6 pt-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+
+        {/* HEADER */}
+        <div className="mb-12 mt-4 space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Stats</h1>
+          <p className="text-sm text-muted-foreground/60 font-medium leading-relaxed">
+            Aggregated insights based on all rides recorded on this device
           </p>
-        </motion.div>
-
-        {lastRide && lastRideStats && (
-          <motion.div
-            className="mb-8"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-          >
-            <RideStats
-              ride={lastRide}
-              stats={lastRideStats}
-              onExport={() => exportRideData(lastRide)}
-            />
-          </motion.div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-          >
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Total Distance</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{formatDistance(aggrStats.totalDistance)}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Total Duration</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{formatDuration(aggrStats.totalDuration)}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Average Smoothness</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{aggrStats.avgSmoothness}<span className="text-lg text-muted-foreground">/100</span></p>
-              </CardContent>
-            </Card>
-          </motion.div>
         </div>
 
-        {!showHeavyCharts ? (
-          <motion.div
-            className="glass-panel p-12 text-center rounded-2xl border-dashed border-2"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            <BarChart2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <h3 className="text-xl font-medium mb-2">Visual Analytics</h3>
-            <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-              Visualizing data for {aggrStats.totalRides} rides might be heavy on some devices.
-            </p>
-            <Button size="lg" onClick={() => setShowHeavyCharts(true)}>
-              Load Charts & Insights
-            </Button>
-          </motion.div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Ride Smoothness</CardTitle>
-                    <CardDescription>Distribution of ride quality</CardDescription>
-                  </CardHeader>
-                  <CardContent className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={aggrStats.smoothnessDistribution}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        >
-                          {aggrStats.smoothnessDistribution.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip content={<CustomTooltip />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </motion.div>
+        {/* SECTION 1: DATASET OVERVIEW */}
+        <div className="grid grid-cols-3 gap-3 mb-12">
+          <div className="bg-card/40 border border-border/50 rounded-2xl p-4 text-center space-y-1">
+            <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Rides</span>
+            <p className="text-xl font-bold">{stats.totalRides}</p>
+          </div>
+          <div className="bg-card/40 border border-border/50 rounded-2xl p-4 text-center space-y-1">
+            <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Time</span>
+            <p className="text-xl font-bold">{formatHours(stats.totalTime)}</p>
+          </div>
+          <div className="bg-card/40 border border-border/50 rounded-2xl p-4 text-center space-y-1">
+            <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Distance</span>
+            <p className="text-xl font-bold">{stats.hasReliableDistance ? formatDistance(stats.totalDistance) : "—"}</p>
+          </div>
+        </div>
 
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Ride Timeline</CardTitle>
-                    <CardDescription>Smoothness score over time</CardDescription>
-                  </CardHeader>
-                  <CardContent className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={aggrStats.rideTimeline}
-                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis domain={[0, 100]} />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="smoothness"
-                          name="Smoothness Score"
-                          stroke="#3b82f6"
-                          activeDot={{ r: 8 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </motion.div>
+        {/* INSIGHT CARDS */}
+        <div className="space-y-6">
+          {/* SECTION 2: RIDE QUALITY */}
+          <div className="flex items-start space-x-4">
+            <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+              <Zap className="h-4 w-4 text-primary/60" />
             </div>
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Ride Quality Snapshot</h4>
+              <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
+                {stats.qualitySentence}
+              </p>
+            </div>
+          </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Events Per Ride</CardTitle>
-                  <CardDescription>Sudden stops and accelerations</CardDescription>
-                </CardHeader>
-                <CardContent className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={aggrStats.rideTimeline}
-                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Bar dataKey="events" name="Events" fill="#f59e0b" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </>
-        )}
+          {/* SECTION 3: VARIABILITY */}
+          <div className="flex items-start space-x-4">
+            <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+              <History className="h-4 w-4 text-primary/60" />
+            </div>
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Variability & Patterns</h4>
+              <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
+                {stats.variabilitySentence}
+              </p>
+            </div>
+          </div>
+
+          {/* SECTION 4: EVENT DENSITY */}
+          <div className="flex items-start space-x-4">
+            <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+              <Activity className="h-4 w-4 text-primary/60" />
+            </div>
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Event Density</h4>
+              <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
+                {stats.eventDensitySentence}
+              </p>
+            </div>
+          </div>
+
+          {/* SECTION 5: DATA QUALITY */}
+          <div className="flex items-start space-x-4">
+            <div className="mt-1 h-8 w-8 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+              <ShieldCheck className="h-4 w-4 text-primary/60" />
+            </div>
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground/40">Data Quality Overview</h4>
+              <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
+                {stats.dataHealthSentence}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* FOOTER / CTA */}
+        <div className="mt-16 pt-8 border-t border-border/50 flex flex-col items-center">
+          <Button
+            variant="outline"
+            size="lg"
+            className="rounded-full px-8 h-12 font-bold text-muted-foreground hover:text-foreground border-2"
+            disabled
+          >
+            <ExternalLink className="h-4 w-4 mr-2" /> View Detailed Analytics
+          </Button>
+          <p className="mt-4 text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground/30">
+            Advanced Insights Locked
+          </p>
+        </div>
       </div>
     </Layout>
   );
