@@ -12,6 +12,7 @@ import {
     Copy,
     Play,
     AlertCircle,
+    AlertTriangle,
     Info,
     CheckCircle2,
     XCircle,
@@ -437,11 +438,25 @@ const Audit = () => {
 
 const StatusBox = ({ label, status }: { label: string, status: string }) => {
     const isGranted = status === 'granted';
+
+    // Defensive Icon Fallback
+    const SafeIcon = ({ icon: Icon, ...props }: any) => {
+        if (!Icon) return <div className="h-4 w-4 rounded-full bg-muted/20" />;
+        try {
+            return <Icon {...props} />;
+        } catch (e) {
+            return <div className="h-4 w-4 rounded-full bg-muted/20" />;
+        }
+    };
+
     return (
         <div className="p-4 bg-muted/20 rounded-2xl ring-1 ring-border/20 flex flex-col space-y-2">
             <span className="text-[9px] uppercase font-bold text-muted-foreground/50">{label}</span>
             <div className="flex items-center space-x-2">
-                {isGranted ? <CheckCircle2 className="h-4 w-4 text-green-500/60" /> : <ShieldAlert className="h-4 w-4 text-muted-foreground/30" />}
+                {isGranted ?
+                    <SafeIcon icon={CheckCircle2} className="h-4 w-4 text-green-500/60" /> :
+                    <SafeIcon icon={AlertTriangle} className="h-4 w-4 text-muted-foreground/30" />
+                }
                 <span className={`text-xs font-black uppercase tracking-widest ${isGranted ? 'text-green-600' : 'text-muted-foreground/60'}`}>{status}</span>
             </div>
         </div>
@@ -462,7 +477,7 @@ const ResultCard = ({ label, metrics }: { label: string, metrics?: SensorMetrics
     <div className="p-4 bg-background/50 rounded-2xl ring-1 ring-border/10 space-y-4">
         <div className="flex items-center justify-between">
             <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{label}</span>
-            <Badge variant="ghost" className="text-[10px] p-0 font-bold opacity-30">{metrics?.samplesCount ?? 0} samples</Badge>
+            <Badge variant="outline" className="text-[10px] p-0 font-bold opacity-30">{metrics?.samplesCount ?? 0} samples</Badge>
         </div>
         <div className="flex items-baseline space-x-1">
             <span className="text-2xl font-black">{metrics?.observedHz ?? '—'}</span>
@@ -490,8 +505,8 @@ const GpsResultCard = ({ label, metrics }: { label: string, metrics?: GpsMetrics
         <div className="flex items-center justify-between border-b border-border/5 pb-2">
             <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{label}</span>
             <div className="flex space-x-2">
-                <Badge className={`${metrics?.hasSpeed ? 'bg-green-500/10 text-green-600' : 'bg-muted/30 text-muted-foreground/40'} border-none text-[8px] uppercase font-black`}>Speed-API</Badge>
-                <Badge variant="ghost" className="text-[10px] p-0 font-bold opacity-30">{metrics?.samplesCount ?? 0} locks</Badge>
+                <Badge variant="outline" className={`${metrics?.hasSpeed ? 'bg-green-500/10 text-green-600' : 'bg-muted/30 text-muted-foreground/40'} border-none text-[8px] uppercase font-black`}>Speed-API</Badge>
+                <Badge variant="outline" className="text-[10px] p-0 font-bold opacity-30">{metrics?.samplesCount ?? 0} locks</Badge>
             </div>
         </div>
 
