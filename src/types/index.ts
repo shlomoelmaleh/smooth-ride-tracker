@@ -35,6 +35,16 @@ export interface RideDataPoint {
   timestamp: number;
 }
 
+export type RideEventType = 'stop' | 'acceleration' | 'impact' | 'turn' | 'other';
+
+export interface RideEventMarker {
+  timestamp: number;
+  relativeTimeMs: number;
+  type: RideEventType;
+  intensity: number; // 0.0 to 1.0 (relative)
+  label: string;
+}
+
 export interface GpsUpdate {
   timestamp: number;
   latitude: number;
@@ -87,6 +97,7 @@ export interface RideDetailsViewModel {
     hasLowGpsQuality?: boolean;
     gpsQualityReason?: string;
   };
+  events?: RideEventMarker[];
 }
 
 // Re-export RideMetadata for convenience

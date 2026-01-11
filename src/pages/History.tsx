@@ -43,7 +43,8 @@ const History = () => {
         isGpsLikelyDuplicated: ride.metadata.qualityFlags.isGpsLikelyDuplicated,
         hasLowGpsQuality: ride.metadata.qualityFlags.hasLowGpsQuality,
         gpsQualityReason: ride.metadata.qualityFlags.gpsQualityReason
-      } : undefined
+      } : undefined,
+      events: ride.metadata?.events
     };
 
     navigate(`/history/${ride.id}`, { state: { viewModel } });
@@ -142,8 +143,8 @@ const History = () => {
                       <div className="flex items-center space-x-3 ml-4">
                         <div
                           className={`h-1.5 w-1.5 rounded-full ${ride.metadata?.qualityFlags?.hasLowGpsQuality
-                              ? 'bg-amber-400/40'
-                              : 'bg-emerald-400/40'
+                            ? 'bg-amber-400/40'
+                            : 'bg-emerald-400/40'
                             }`}
                         />
                         <ChevronRight className="h-5 w-5 text-muted-foreground/20 group-hover:text-primary/40 transition-colors" />

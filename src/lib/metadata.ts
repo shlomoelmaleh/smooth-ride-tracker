@@ -1,4 +1,4 @@
-import { RideSession, RideDataPoint, GpsUpdate } from '../types';
+import { RideSession, RideDataPoint, GpsUpdate, RideEventMarker } from '../types';
 import pkg from '../../package.json';
 import { validateMetadata, ValidationResult } from './metadataValidator';
 
@@ -189,6 +189,7 @@ export interface RideMetadata {
     // Validation Results (embedded automatically)
     validation: ValidationResult;
 
+    events?: RideEventMarker[];
     notes?: string;
 }
 
@@ -708,7 +709,73 @@ export function buildRideMetadata(
     // Run automatic validation and embed results
     metadata.validation = validateMetadata(metadata);
 
+    // Extract notable events for the timeline
+    metadata.events = detectNotableEvents(dataPoints, startEpochMs);
+
     return metadata;
+}
+
+/**
+ * Helper: Detect notable events from acceleration series
+ */
+function detectNotableEvents(dataPoints: RideDataPoint[], startTime: number): RideEventMarker[] {
+    const events: RideEventMarker[] = [];
+    if (dataPoints.length < 5) return events;
+
+    const G = 9.81;
+    const IMPACT_THRESHOLD = 2.5 * G; // 2.5g
+    const BRAKE_THRESHOLD = 0.4 * G;  // 0.4g (relative jump)
+
+    // We'll use a simple sliding window or high-pass to find peaks
+    // For now, let's look for absolute peaks that stand out
+    dataPoints.forEach((p, idx) => {
+        if (idx === 0) return;
+
+        const acc = p.earth || p.accelerometer;
+        const mag = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+
+        // Intensity mapping 0-1
+        // Impacts: 2.5g -> 0.4, 5g -> 1.0
+        if (mag > IMPACT_THRESHOLD) {
+            const intensity = Math.min(1, 0.4 + (mag - IMPACT_THRESHOLD) / (3 * G));
+            events.push({
+                timestamp: p.timestamp,
+                relativeTimeMs: p.timestamp - startTime,
+                type: 'impact',
+                intensity: Number(intensity.toFixed(2)),
+                label: mag > 4 * G ? 'High Impact' : 'Minor Bump'
+            });
+        }
+
+        // Sudden delta check (simplified)
+        const prevAcc = dataPoints[idx - 1].earth || dataPoints[idx - 1].accelerometer;
+        const prevMag = Math.sqrt(prevAcc.x ** 2 + prevAcc.y ** 2 + prevAcc.z ** 2);
+        const delta = Math.abs(mag - prevMag);
+
+        if (delta > BRAKE_THRESHOLD && mag < IMPACT_THRESHOLD) {
+            const intensity = Math.min(0.6, 0.2 + (delta / G));
+            events.push({
+                timestamp: p.timestamp,
+                relativeTimeMs: p.timestamp - startTime,
+                type: mag > prevMag ? 'acceleration' : 'stop',
+                intensity: Number(intensity.toFixed(2)),
+                label: mag > prevMag ? 'Quick Accel' : 'Sudden Stop'
+            });
+        }
+    });
+
+    // Simple de-duplication (take only strongest event in any 1000ms window)
+    const filtered: RideEventMarker[] = [];
+    const sortedByIntensity = [...events].sort((a, b) => b.intensity - a.intensity);
+
+    sortedByIntensity.forEach(e => {
+        const isDuplicate = filtered.some(f => Math.abs(f.relativeTimeMs - e.relativeTimeMs) < 1000);
+        if (!isDuplicate) {
+            filtered.push(e);
+        }
+    });
+
+    return filtered.sort((a, b) => a.relativeTimeMs - b.relativeTimeMs);
 }
 
 /**

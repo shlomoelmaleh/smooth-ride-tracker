@@ -145,45 +145,58 @@ const RideDetails = () => {
                     </p>
                 </div>
 
-                {/* SECTION 3: RIDE EVENTS (COLLAPSIBLE) */}
-                <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="events" className="border-none">
-                        <AccordionTrigger className="hover:no-underline px-4 py-4 bg-card/20 hover:bg-card/40 rounded-2xl ring-1 ring-border/40 transition-all [&[data-state=open]>svg]:rotate-180">
-                            <div className="flex items-center space-x-3">
-                                <Activity className="h-4 w-4 text-muted-foreground/40" />
-                                <span className="text-sm font-bold tracking-tight">Ride Events</span>
-                            </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="pt-4 px-6 pb-6 space-y-4">
-                            {viewModel.statsSummary ? (
-                                <>
-                                    <p className="text-sm text-muted-foreground font-medium leading-relaxed">
-                                        {(viewModel.statsSummary.suddenStops || 0) + (viewModel.statsSummary.suddenAccelerations || 0) > 0
-                                            ? "Several sudden movements detected during transit."
-                                            : "No notable events detected during this ride."}
-                                    </p>
-                                    <div className="flex items-center space-x-6">
+                {/* SECTION 3: RIDE EVENTS (TIMELINE) */}
+                <div className="space-y-6">
+                    <div className="flex items-center space-x-3 px-2">
+                        <Activity className="h-4 w-4 text-muted-foreground/40" />
+                        <span className="text-sm font-bold tracking-tight uppercase tracking-[0.1em] text-muted-foreground/60">Notable Events</span>
+                    </div>
+
+                    <div className="space-y-4">
+                        {viewModel.events && viewModel.events.length > 0 ? (
+                            <div className="relative pl-6 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[1.5px] before:bg-border/30">
+                                {viewModel.events.map((event, idx) => (
+                                    <div key={idx} className="relative animate-in fade-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${idx * 100}ms` }}>
+                                        {/* Dot */}
+                                        <div className={`absolute -left-[19.5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-background ring-4 ring-background ${event.type === 'impact' ? 'bg-rose-500/60' :
+                                                event.type === 'stop' ? 'bg-amber-500/60' : 'bg-blue-500/60'
+                                            }`} />
+
                                         <div className="space-y-1">
-                                            <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground/40">Max Impact</span>
-                                            <p className="text-base font-bold">
-                                                {viewModel.statsSummary.maxAbsAccel
-                                                    ? `${Math.round(viewModel.statsSummary.maxAbsAccel / 9.81)} g`
-                                                    : "—"}
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
+                                                    {Math.floor(event.relativeTimeMs / 1000)}s into ride
+                                                </span>
+                                                <div className="h-1 w-12 bg-muted/30 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full ${event.intensity > 0.7 ? 'bg-rose-500/40' :
+                                                                event.intensity > 0.4 ? 'bg-amber-500/40' : 'bg-primary/40'
+                                                            }`}
+                                                        style={{ width: `${event.intensity * 100}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <p className="text-sm font-semibold text-foreground/80 leading-tight">
+                                                {event.label}
                                             </p>
                                         </div>
                                     </div>
-                                </>
-                            ) : (
-                                <p className="text-sm text-muted-foreground italic">No notable events detected</p>
-                            )}
-                        </AccordionContent>
-                    </AccordionItem>
-                </Accordion>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="px-6 py-8 bg-muted/20 rounded-2xl border border-dashed border-border/50 text-center">
+                                <p className="text-sm text-muted-foreground/50 italic font-medium">
+                                    No notable events detected during this ride.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                <div className="py-12 flex flex-col items-center space-y-2 opacity-20">
-                    <ShieldCheck className="h-4 w-4" />
-                    <span className="text-[10px] uppercase font-black tracking-widest text-center">
-                        End of Summary
+                <div className="py-16 flex flex-col items-center space-y-3 opacity-20">
+                    <div className="h-10 w-[1px] bg-gradient-to-b from-transparent to-foreground/50" />
+                    <span className="text-[10px] uppercase font-black tracking-widest text-center tracking-[0.3em]">
+                        End of Timeline
                     </span>
                 </div>
             </div>
