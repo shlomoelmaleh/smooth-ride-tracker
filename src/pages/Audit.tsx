@@ -151,7 +151,64 @@ const Audit = () => {
         }
     };
 
+    const sanitizeCoreAnalysisForExport = (analysis: AnalyzeResultV1 | null): any => {
+        if (!analysis) return null;
+        // Deep clone to avoid mutating state
+        const sanitized = JSON.parse(JSON.stringify(analysis));
+
+        // Remove any leaked lat/lon if they were ever added to the result by mistake
+        if (sanitized.gps) {
+            delete sanitized.gps.lat;
+            delete sanitized.gps.lon;
+        }
+
+        if (sanitized.impactEvents) {
+            sanitized.impactEvents.forEach((ev: any) => {
+                if (ev.gpsContext) {
+                    delete ev.gpsContext.lat;
+                    delete ev.gpsContext.lon;
+                }
+            });
+        }
+
+        return sanitized;
+    };
+
+    const buildCoreSummary = (analysis: AnalyzeResultV1 | null): any => {
+        if (!analysis) return null;
+
+        return {
+            durationMs: analysis.durationMs,
+            imu: {
+                hz: analysis.imu.observedHz,
+                dtMedian: analysis.imu.dtMedian,
+                dtP95: analysis.imu.dtP95,
+                accelRms: analysis.imu.accelRms,
+                accelP95: analysis.imu.accelP95,
+                jerkRms: analysis.imu.jerkRms,
+                jerkP95: analysis.imu.jerkP95,
+                gyroRms: analysis.imu.gyroRms,
+                gyroP95: analysis.imu.gyroP95
+            },
+            gps: {
+                samplesCount: analysis.gps.samplesCount,
+                hz: analysis.gps.observedHz,
+                accuracyMedianM: analysis.gps.accuracyMedianM,
+                accuracyP95M: analysis.gps.accuracyP95M,
+                hasSpeedObserved: analysis.gps.hasSpeedObserved
+            },
+            flags: analysis.flags,
+            impactEventsCount: analysis.impactEvents.length,
+            topImpactEvents: analysis.impactEvents.slice(0, 5).map(ev => ({
+                tPeakSec: Number(((ev.tPeak - analysis.impactEvents[0].tStart) / 1000).toFixed(1)),
+                peakAcc: ev.peakAcc,
+                energyIndex: ev.energyIndex
+            }))
+        };
+    };
+
     const generateReport = () => {
+        const sanitizedCore = sanitizeCoreAnalysisForExport(analysisResult);
         return {
             generatedAt: new Date().toISOString(),
             app: { name: "SmartRide", version: pkg.version, schema: 2 },
@@ -163,7 +220,9 @@ const Audit = () => {
             capabilities,
             testDurationSec: selectedDuration / 1000,
             observed: testResults || liveHealth,
-            flags
+            coreAnalysis: sanitizedCore,
+            coreSummary: buildCoreSummary(analysisResult),
+            flags: sanitizedCore ? [...new Set([...flags, ...sanitizedCore.flags])] : (analysisResult ? flags : [...flags, "CORE_ANALYSIS_MISSING"])
         };
     };
 
@@ -352,6 +411,10 @@ const Audit = () => {
                                                     )}
                                                 </div>
                                             </div>
+                                        </div>
+                                        <div className="pt-1 text-[8px] font-bold text-green-600/60 flex items-center justify-center opacity-80">
+                                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                                            Export includes Core Analysis ✅
                                         </div>
                                     </div>
                                 )}
