@@ -14,11 +14,13 @@ export function runMetadataSanityCheck() {
         startTime: 1736282000000,
         endTime: 1736282060000, // 60 seconds
         dataPoints: Array.from({ length: 600 }).map((_, i) => ({
+            schemaVersion: 2 as const,
             timestamp: 1736282000000 + (i * 100),
             accelerometer: { x: 0, y: 9.8, z: 0, timestamp: 1736282000000 + (i * 100) },
             gyroscope: { alpha: 0, beta: 0, gamma: 0, timestamp: 1736282000000 + (i * 100) },
             location: i % 10 === 0 ? { latitude: 32.0, longitude: 34.0, accuracy: 10, timestamp: 1736282000000 + (i * 100) } : null,
-            earth: null
+            earth: null,
+            sensors: {}
         })),
         gpsUpdates: [
             { timestamp: 1736282000000, latitude: 32.0, longitude: 34.0, accuracy: 10, speed: 5, heading: 0 },
