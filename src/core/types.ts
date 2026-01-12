@@ -63,6 +63,18 @@ export interface CoreMetricsV1 {
     gyroP95?: number;
 }
 
+export type MotionState = 'STATIC' | 'WALKING' | 'VEHICLE' | 'UNKNOWN';
+
+export interface MotionClassificationV1 {
+    state: MotionState;
+    confidence: number;
+    signals: {
+        accelRms: number;
+        jerkRms: number;
+        gyroRms: number;
+    };
+}
+
 export interface ImpactEventV1 {
     tStart: MsEpoch;
     tPeak: MsEpoch;
@@ -83,6 +95,7 @@ export interface AnalyzeResultV1 {
         accuracyP95M: number | null;
         hasSpeedObserved: boolean;
     };
+    motionClassification: MotionClassificationV1;
     flags: CoreFlag[];
     impactEvents: ImpactEventV1[];
 }

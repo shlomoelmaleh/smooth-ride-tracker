@@ -10,6 +10,7 @@ import {
 import { computeStreamStats, getMedian, getPercentile } from './stats';
 import { extractFeatures } from './features';
 import { detectImpacts } from './events';
+import { classifyMotion } from './motion';
 
 class SmartRideCoreEngineV1 implements CoreEngine {
     private frames: CoreFrameV1[] = [];
@@ -124,6 +125,7 @@ class SmartRideCoreEngineV1 implements CoreEngine {
 
         // 5. Impact Detection
         const impactEvents = detectImpacts(this.frames, featureResult.accelMags, this.options);
+        const motionClassification = classifyMotion(featureResult.metrics, framesCount);
 
         return {
             durationMs,
@@ -137,6 +139,7 @@ class SmartRideCoreEngineV1 implements CoreEngine {
                 accuracyP95M,
                 hasSpeedObserved
             },
+            motionClassification,
             flags: [...new Set(flags)],
             impactEvents
         };
