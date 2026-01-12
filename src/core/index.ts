@@ -10,7 +10,7 @@ import {
 import { computeStreamStats, getMedian, getPercentile } from './stats';
 import { extractFeatures } from './features';
 import { detectImpacts } from './events';
-import { classifyMotion } from './motion';
+import { classifyMotion, detectInVehicle } from './motion';
 
 class SmartRideCoreEngineV1 implements CoreEngine {
     private frames: CoreFrameV1[] = [];
@@ -96,7 +96,12 @@ class SmartRideCoreEngineV1 implements CoreEngine {
             .sort((a, b) => a - b);
         const accuracyMedianM = getMedian(gpsAccuracies);
         const accuracyP95M = getPercentile(gpsAccuracies, 0.95);
-        const hasSpeedObserved = uniqueGpsFixes.some(f => typeof f.speed === 'number' && !Number.isNaN(f.speed));
+        const gpsSpeeds = uniqueGpsFixes
+            .map(f => f.speed)
+            .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v))
+            .sort((a, b) => a - b);
+        const gpsSpeedMedian = getMedian(gpsSpeeds);
+        const hasSpeedObserved = gpsSpeeds.length > 0;
 
         const gpsStats = {
             samplesCount: gpsSamplesCount,
@@ -126,6 +131,7 @@ class SmartRideCoreEngineV1 implements CoreEngine {
         // 5. Impact Detection
         const impactEvents = detectImpacts(this.frames, featureResult.accelMags, this.options);
         const motionClassification = classifyMotion(featureResult.metrics, framesCount);
+        const inVehicle = detectInVehicle(featureResult.metrics, gpsSpeedMedian);
 
         return {
             durationMs,
@@ -140,6 +146,7 @@ class SmartRideCoreEngineV1 implements CoreEngine {
                 hasSpeedObserved
             },
             motionClassification,
+            inVehicle,
             flags: [...new Set(flags)],
             impactEvents
         };

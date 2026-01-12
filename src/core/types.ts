@@ -101,6 +101,18 @@ export interface MotionClassificationV1 {
     };
 }
 
+export interface InVehicleDetectionV1 {
+    value: boolean;
+    confidence: number;
+    reason: string;
+    signals: {
+        accelRms: number;
+        jerkRms: number;
+        gyroRms: number;
+        gpsSpeedMedian?: number | null;
+    };
+}
+
 export interface ImpactEventV1 {
     tStart: MsEpoch;
     tPeak: MsEpoch;
@@ -122,6 +134,7 @@ export interface AnalyzeResultV1 {
         hasSpeedObserved: boolean;
     };
     motionClassification: MotionClassificationV1;
+    inVehicle: InVehicleDetectionV1;
     flags: CoreFlag[];
     impactEvents: ImpactEventV1[];
 }

@@ -1,4 +1,4 @@
-import { CoreMetricsV1, MotionClassificationV1, MotionState } from './types';
+import { CoreMetricsV1, InVehicleDetectionV1, MotionClassificationV1, MotionState } from './types';
 
 const clamp01 = (value: number): number => {
     return Math.min(1, Math.max(0, value));
@@ -35,6 +35,73 @@ const averageScore = (scores: Array<number | null>): number => {
     if (filtered.length === 0) return 0;
     const total = filtered.reduce((sum, score) => sum + score, 0);
     return clamp01(total / filtered.length);
+};
+
+const scoreInsideBand = (value: number, min: number, max: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    if (value < min || value > max) return 0;
+    const half = (max - min) / 2;
+    if (half <= 0) return 0;
+    const margin = Math.min(value - min, max - value);
+    return clamp01(margin / half);
+};
+
+export const detectInVehicle = (metrics: CoreMetricsV1, gpsSpeedMedian?: number | null): InVehicleDetectionV1 => {
+    const accelRms = Number.isFinite(metrics.accelRms) ? metrics.accelRms : Number.NaN;
+    const jerkRms = Number.isFinite(metrics.jerkRms) ? metrics.jerkRms : Number.NaN;
+    const gyroRms = Number.isFinite(metrics.gyroRms) ? metrics.gyroRms : Number.NaN;
+    const gpsSpeed = Number.isFinite(gpsSpeedMedian ?? Number.NaN) ? gpsSpeedMedian! : null;
+
+    const signals = {
+        accelRms: Number.isFinite(accelRms) ? accelRms : 0,
+        jerkRms: Number.isFinite(jerkRms) ? jerkRms : 0,
+        gyroRms: Number.isFinite(gyroRms) ? gyroRms : 0,
+        gpsSpeedMedian: gpsSpeed
+    };
+
+    if (gpsSpeed !== null && gpsSpeed >= 3.0) {
+        return {
+            value: true,
+            confidence: 0.98,
+            reason: 'gps_speed>=3.0mps',
+            signals
+        };
+    }
+
+    const accelOk = Number.isFinite(accelRms) && accelRms >= 0.2 && accelRms <= 2.5;
+    const jerkOk = Number.isFinite(jerkRms) && jerkRms >= 1.5 && jerkRms <= 25;
+    const gyroOk = Number.isFinite(gyroRms) && gyroRms >= 0.3 && gyroRms <= 10;
+    const allAvailable = Number.isFinite(accelRms) && Number.isFinite(jerkRms) && Number.isFinite(gyroRms);
+
+    if (!allAvailable) {
+        return {
+            value: false,
+            confidence: 0,
+            reason: 'imu_missing',
+            signals
+        };
+    }
+
+    if (accelOk && jerkOk && gyroOk) {
+        const confidence = averageScore([
+            scoreInsideBand(accelRms, 0.2, 2.5),
+            scoreInsideBand(jerkRms, 1.5, 25),
+            scoreInsideBand(gyroRms, 0.3, 10)
+        ]);
+        return {
+            value: true,
+            confidence: Number(confidence.toFixed(3)),
+            reason: 'imu_in_range',
+            signals
+        };
+    }
+
+    return {
+        value: false,
+        confidence: 0,
+        reason: 'imu_out_of_range',
+        signals
+    };
 };
 
 export const classifyMotion = (metrics: CoreMetricsV1, framesCount: number): MotionClassificationV1 => {
