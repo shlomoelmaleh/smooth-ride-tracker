@@ -46,7 +46,17 @@ const scoreInsideBand = (value: number, min: number, max: number): number => {
     return clamp01(margin / half);
 };
 
-export const detectInVehicle = (metrics: CoreMetricsV1, gpsSpeedMedian?: number | null): InVehicleDetectionV1 => {
+const scoreOutsideBand = (value: number, min: number, max: number): number => {
+    if (value < min) return clamp01((min - value) / min);
+    if (value > max) return clamp01((value - max) / max);
+    return 0;
+};
+
+export const detectInVehicle = (
+    metrics: CoreMetricsV1,
+    gpsSpeedMedian?: number | null,
+    motionClassification?: MotionClassificationV1 | null
+): InVehicleDetectionV1 => {
     const accelRms = Number.isFinite(metrics.accelRms) ? metrics.accelRms : Number.NaN;
     const jerkRms = Number.isFinite(metrics.jerkRms) ? metrics.jerkRms : Number.NaN;
     const gyroRms = Number.isFinite(metrics.gyroRms) ? metrics.gyroRms : Number.NaN;
@@ -96,10 +106,29 @@ export const detectInVehicle = (metrics: CoreMetricsV1, gpsSpeedMedian?: number 
         };
     }
 
+    const outsideScore = averageScore([
+        scoreIfFinite(accelRms, value => scoreOutsideBand(value, 0.2, 2.5)),
+        scoreIfFinite(jerkRms, value => scoreOutsideBand(value, 1.5, 25)),
+        scoreIfFinite(gyroRms, value => scoreOutsideBand(value, 0.3, 10))
+    ]);
+
+    // Heuristic: start at 0.5 and add up to 0.5 based on distance outside vehicle-like bands.
+    let confidence = 0.5 + 0.5 * Math.sqrt(outsideScore);
+    if (motionClassification?.state === 'STATIC') {
+        // Very low motion should read as strong "not in vehicle".
+        confidence = Math.max(confidence, 0.9);
+    }
+
+    const reason = motionClassification?.state === 'STATIC'
+        ? 'static_like'
+        : motionClassification?.state === 'WALKING'
+            ? 'walking_like'
+            : 'imu_outside_vehicle_band';
+
     return {
         value: false,
-        confidence: 0,
-        reason: 'imu_out_of_range',
+        confidence: Number(confidence.toFixed(3)),
+        reason,
         signals
     };
 };

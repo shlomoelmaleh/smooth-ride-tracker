@@ -131,7 +131,7 @@ class SmartRideCoreEngineV1 implements CoreEngine {
         // 5. Impact Detection
         const impactEvents = detectImpacts(this.frames, featureResult.accelMags, this.options);
         const motionClassification = classifyMotion(featureResult.metrics, framesCount);
-        const inVehicle = detectInVehicle(featureResult.metrics, gpsSpeedMedian);
+        const inVehicle = detectInVehicle(featureResult.metrics, gpsSpeedMedian, motionClassification);
 
         return {
             durationMs,
