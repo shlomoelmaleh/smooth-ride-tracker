@@ -143,6 +143,55 @@ export interface AnalyzeResultV1 {
     impactEvents: ImpactEventV1[];
 }
 
+export type WindowFlag = 'GPS_LOW_RATE' | 'STATS_INCONSISTENT' | 'INSUFFICIENT_DATA';
+
+export interface WindowSummaryV1 {
+    tStartSec: number;
+    tEndSec: number;
+    durationMs: number;
+    imu: {
+        samplesCount: number;
+        accelRms: number;
+        accelP95: number;
+        jerkRms: number;
+        jerkP95: number;
+        gyroRms?: number;
+        gyroP95?: number;
+    };
+    gps: {
+        samplesCount: number;
+        observedHz: number;
+        accuracyMedianM: number | null;
+        accuracyP95M: number | null;
+        speedMedian: number | null;
+    };
+    motionClassification: Pick<MotionClassificationV1, 'state' | 'confidence' | 'signals'>;
+    inVehicle: InVehicleDetectionV1;
+    flags: WindowFlag[];
+}
+
+export interface SegmentSummaryV1 {
+    tStartSec: number;
+    tEndSec: number;
+    state: 'STATIC' | 'WALKING' | 'IN_VEHICLE' | 'UNKNOWN';
+    confidence: number;
+    reason: string;
+}
+
+export interface CoreAnalysisWindowsV1 {
+    windowSizeMs: number;
+    stepMs: number;
+    windowsCount: number;
+    windows: WindowSummaryV1[];
+}
+
+export interface WindowingResultV1 {
+    windowSizeMs: number;
+    stepMs: number;
+    windows: WindowSummaryV1[];
+    segments: SegmentSummaryV1[];
+}
+
 export interface CoreEngine {
     ingest(frame: CoreFrameV1): void;
     setCapabilities(report: CapabilitiesReport): void;

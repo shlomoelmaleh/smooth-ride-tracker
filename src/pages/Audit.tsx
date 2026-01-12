@@ -24,7 +24,8 @@ import { detectCapabilities, requestSensorPermissions } from '@/sensors/sensorRe
 import { startCollectors } from '@/sensors/sensorCollector';
 import { CapabilitiesReport, CollectionHealth, StreamHealth, UnifiedSampleV2 } from '@/sensors/sensorTypes';
 import { createEngine } from '@/core';
-import { AnalyzeResultV1, CoreFrameV1 } from '@/core/types';
+import { buildCoreWindowing } from '@/core/windowing';
+import { AnalyzeResultV1, CoreFrameV1, SegmentSummaryV1, WindowingResultV1 } from '@/core/types';
 
 const Audit = () => {
     const [permissions, setPermissions] = useState<{ motion: string, location: string }>({
@@ -42,10 +43,15 @@ const Audit = () => {
     const [liveData, setLiveData] = useState<UnifiedSampleV2 | null>(null);
     const [testResults, setTestResults] = useState<CollectionHealth | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalyzeResultV1 | null>(null);
+    const [coreWindowing, setCoreWindowing] = useState<WindowingResultV1 | null>(null);
     const [flags, setFlags] = useState<string[]>([]);
 
     const collectorRef = useRef<{ stop: () => void } | null>(null);
     const engineRef = useRef(createEngine());
+    const auditFramesRef = useRef<CoreFrameV1[]>([]);
+
+    // Toggle to omit per-window summaries from exported Audit JSON.
+    const includeWindowSummaries = true;
 
     useEffect(() => {
         const checkInitial = async () => {
@@ -71,7 +77,9 @@ const Audit = () => {
         setElapsedTime(0);
         setTestResults(null);
         setAnalysisResult(null);
+        setCoreWindowing(null);
         engineRef.current.reset();
+        auditFramesRef.current = [];
 
         const duration = selectedDuration;
         const startAt = Date.now();
@@ -95,6 +103,7 @@ const Audit = () => {
                     } : undefined
                 };
                 engineRef.current.ingest(frame);
+                auditFramesRef.current.push(frame);
             },
             onHealthUpdate: (health) => {
                 const now = Date.now();
@@ -117,6 +126,11 @@ const Audit = () => {
                     const analysis = engineRef.current.finalize();
                     setAnalysisResult(analysis);
 
+                    const analysisSnapshot = JSON.stringify(analysis);
+                    const windowingResult = buildCoreWindowing(auditFramesRef.current);
+                    setCoreWindowing(windowingResult);
+                    const analysisSnapshotAfter = JSON.stringify(analysis);
+
                     // Extract flags from final health + analysis
                     const newFlags = [...(capabilities?.flags || [])];
                     if ((health.gps?.observedHz || 0) < 0.5) newFlags.push("Extremely low GPS update rate");
@@ -128,6 +142,10 @@ const Audit = () => {
                         const message = f.replace(/_/g, ' ');
                         if (!newFlags.includes(message)) newFlags.push(message);
                     });
+
+                    if (analysisSnapshotAfter !== analysisSnapshot) {
+                        newFlags.push("WINDOWING_MUTATED_ANALYSIS");
+                    }
 
                     setFlags([...new Set(newFlags)]);
                 }
@@ -174,7 +192,13 @@ const Audit = () => {
         return sanitized;
     };
 
-    const buildCoreSummary = (analysis: AnalyzeResultV1 | null): any => {
+    const pickTopSegments = (segments: SegmentSummaryV1[], limit: number) => {
+        return [...segments]
+            .sort((a, b) => (b.tEndSec - b.tStartSec) - (a.tEndSec - a.tStartSec))
+            .slice(0, limit);
+    };
+
+    const buildCoreSummary = (analysis: AnalyzeResultV1 | null, windowing: WindowingResultV1 | null): any => {
         if (!analysis) return null;
 
         return {
@@ -203,12 +227,23 @@ const Audit = () => {
                 tPeakSec: Number(((ev.tPeak - analysis.impactEvents[0].tStart) / 1000).toFixed(1)),
                 peakAcc: ev.peakAcc,
                 energyIndex: ev.energyIndex
-            }))
+            })),
+            windowsCount: windowing?.windows.length || 0,
+            segmentsCount: windowing?.segments.length || 0,
+            topSegments: windowing ? pickTopSegments(windowing.segments, 5) : []
         };
     };
 
     const generateReport = () => {
         const sanitizedCore = sanitizeCoreAnalysisForExport(analysisResult);
+        const coreAnalysisWindows = includeWindowSummaries && coreWindowing
+            ? {
+                windowSizeMs: coreWindowing.windowSizeMs,
+                stepMs: coreWindowing.stepMs,
+                windowsCount: coreWindowing.windows.length,
+                windows: coreWindowing.windows
+            }
+            : undefined;
         return {
             generatedAt: new Date().toISOString(),
             app: { name: "SmartRide", version: pkg.version, schema: 2 },
@@ -221,7 +256,9 @@ const Audit = () => {
             testDurationSec: selectedDuration / 1000,
             observed: testResults || liveHealth,
             coreAnalysis: sanitizedCore,
-            coreSummary: buildCoreSummary(analysisResult),
+            coreSummary: buildCoreSummary(analysisResult, coreWindowing),
+            coreAnalysisWindows,
+            coreSegments: coreWindowing?.segments,
             flags: sanitizedCore ? [...new Set([...flags, ...sanitizedCore.flags])] : (analysisResult ? flags : [...flags, "CORE_ANALYSIS_MISSING"])
         };
     };
