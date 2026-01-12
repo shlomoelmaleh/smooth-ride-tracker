@@ -322,7 +322,7 @@ const Audit = () => {
                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/40">Audit Test</h3>
                         {!isTesting && !testResults && (
                             <div className="flex bg-muted/30 p-0.5 rounded-full ring-1 ring-border/20">
-                                {[10000, 30000, 60000].map((d) => (
+                                {[10000, 30000, 60000, 300000].map((d) => (
                                     <button
                                         key={d}
                                         onClick={() => setSelectedDuration(d)}
