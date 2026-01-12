@@ -65,6 +65,46 @@ const ChartContainer = React.forwardRef<
 })
 ChartContainer.displayName = "Chart"
 
+// Strict regex for validating CSS color values to prevent XSS
+// Supports: hex (#fff, #ffffff, #ffffffff), rgb/rgba, hsl/hsla, and CSS color names
+const CSS_COLOR_REGEX = /^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)|hsl\(\s*\d{1,3}(\.\d+)?\s*,?\s*\d{1,3}(\.\d+)?%?\s*,?\s*\d{1,3}(\.\d+)?%?\s*\)|hsla\(\s*\d{1,3}(\.\d+)?\s*,?\s*\d{1,3}(\.\d+)?%?\s*,?\s*\d{1,3}(\.\d+)?%?\s*,?\s*(0|1|0?\.\d+)\s*\)|[a-zA-Z]+)$/
+
+// Sanitize and validate a color value - returns the color if valid, null otherwise
+function sanitizeColor(color: string | undefined): string | null {
+  if (!color || typeof color !== 'string') {
+    return null
+  }
+  
+  const trimmed = color.trim()
+  
+  // Check against whitelist regex
+  if (!CSS_COLOR_REGEX.test(trimmed)) {
+    console.warn(`[ChartStyle] Invalid color value rejected: ${trimmed.substring(0, 50)}`)
+    return null
+  }
+  
+  // Additional safety: reject any value containing suspicious characters
+  if (/[<>(){}[\]\\'"`;]/.test(trimmed) && !trimmed.startsWith('rgb') && !trimmed.startsWith('hsl')) {
+    console.warn(`[ChartStyle] Suspicious color value rejected: ${trimmed.substring(0, 50)}`)
+    return null
+  }
+  
+  return trimmed
+}
+
+// Sanitize CSS identifier (key names) to prevent injection
+function sanitizeCssIdentifier(key: string): string | null {
+  if (!key || typeof key !== 'string') {
+    return null
+  }
+  // Only allow alphanumeric, hyphens, and underscores
+  if (!/^[a-zA-Z0-9_-]+$/.test(key)) {
+    console.warn(`[ChartStyle] Invalid CSS identifier rejected: ${key.substring(0, 50)}`)
+    return null
+  }
+  return key
+}
+
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([_, config]) => config.theme || config.color
@@ -74,25 +114,37 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null
   }
 
+  // Build CSS using validated/sanitized values only
+  const cssContent = Object.entries(THEMES)
+    .map(([theme, prefix]) => {
+      const cssVars = colorConfig
+        .map(([key, itemConfig]) => {
+          const sanitizedKey = sanitizeCssIdentifier(key)
+          if (!sanitizedKey) return null
+          
+          const rawColor =
+            itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
+            itemConfig.color
+          const sanitizedColor = sanitizeColor(rawColor)
+          
+          return sanitizedColor ? `  --color-${sanitizedKey}: ${sanitizedColor};` : null
+        })
+        .filter(Boolean)
+        .join("\n")
+      
+      return cssVars ? `${prefix} [data-chart=${id}] {\n${cssVars}\n}` : null
+    })
+    .filter(Boolean)
+    .join("\n")
+
+  if (!cssContent) {
+    return null
+  }
+
   return (
     <style
       dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
-    const color =
-      itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
-      itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
-  })
-  .join("\n")}
-}
-`
-          )
-          .join("\n"),
+        __html: cssContent,
       }}
     />
   )
