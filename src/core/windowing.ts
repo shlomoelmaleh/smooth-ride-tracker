@@ -3,6 +3,7 @@ import {
     WindowingResultV1,
     WindowSummaryV1,
     SegmentSummaryV1,
+    DisplaySegmentSummaryV1,
     WindowFlag
 } from './types';
 import { extractFeatures } from './features';
@@ -163,6 +164,56 @@ const buildSegments = (windows: WindowSummaryV1[]): SegmentSummaryV1[] => {
     return segments;
 };
 
+export const buildDisplaySegments = (
+    coreSegments: SegmentSummaryV1[],
+    maxUnknownSec: number = 20
+): DisplaySegmentSummaryV1[] => {
+    if (coreSegments.length === 0) return [];
+
+    const displaySegments: DisplaySegmentSummaryV1[] = [];
+
+    for (let i = 0; i < coreSegments.length; i++) {
+        const segment = coreSegments[i];
+
+        if (segment.state === 'UNKNOWN') {
+            const prev = coreSegments[i - 1];
+            const next = coreSegments[i + 1];
+            const durationSec = segment.tEndSec - segment.tStartSec;
+
+            if (
+                prev &&
+                next &&
+                prev.state === next.state &&
+                prev.state !== 'UNKNOWN' &&
+                durationSec <= maxUnknownSec
+            ) {
+                const last = displaySegments[displaySegments.length - 1];
+                if (last && last.state === prev.state && last.tEndSec === prev.tEndSec) {
+                    last.tEndSec = next.tEndSec;
+                    last.wasBridged = true;
+                    last.bridgedDurationSec = (last.bridgedDurationSec ?? 0) + durationSec;
+                } else {
+                    displaySegments.push({
+                        ...prev,
+                        tEndSec: next.tEndSec,
+                        wasBridged: true,
+                        bridgedDurationSec: durationSec
+                    });
+                }
+                i += 1;
+                continue;
+            }
+        }
+
+        displaySegments.push({
+            ...segment,
+            wasBridged: false
+        });
+    }
+
+    return displaySegments;
+};
+
 export const buildCoreWindowing = (
     frames: CoreFrameV1[],
     windowSizeMs: number = DEFAULT_WINDOW_SIZE_MS,
@@ -170,7 +221,7 @@ export const buildCoreWindowing = (
 ): WindowingResultV1 => {
     const bounds = getWindowTimeBounds(frames);
     if (!bounds) {
-        return { windowSizeMs, stepMs, windows: [], segments: [] };
+        return { windowSizeMs, stepMs, windows: [], segments: [], displaySegments: [] };
     }
 
     const sortedFrames = [...frames].sort((a, b) => a.timestamp - b.timestamp);
@@ -251,5 +302,6 @@ export const buildCoreWindowing = (
     }));
 
     const segments = buildSegments(windowsWithInVehicle);
-    return { windowSizeMs, stepMs, windows: windowsWithInVehicle, segments };
+    const displaySegments = buildDisplaySegments(segments);
+    return { windowSizeMs, stepMs, windows: windowsWithInVehicle, segments, displaySegments };
 };

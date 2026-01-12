@@ -182,6 +182,11 @@ export interface SegmentSummaryV1 {
     reason: string;
 }
 
+export interface DisplaySegmentSummaryV1 extends SegmentSummaryV1 {
+    wasBridged: boolean;
+    bridgedDurationSec?: number;
+}
+
 export interface CoreAnalysisWindowsV1 {
     windowSizeMs: number;
     stepMs: number;
@@ -194,6 +199,7 @@ export interface WindowingResultV1 {
     stepMs: number;
     windows: WindowSummaryV1[];
     segments: SegmentSummaryV1[];
+    displaySegments: DisplaySegmentSummaryV1[];
 }
 
 export interface CoreEngine {
