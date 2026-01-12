@@ -133,6 +133,23 @@ class SmartRideCoreEngineV1 implements CoreEngine {
         const motionClassification = classifyMotion(featureResult.metrics, framesCount);
         const inVehicle = detectInVehicle(featureResult.metrics, gpsSpeedMedian, motionClassification);
 
+        // Verification: run static, walking, and vehicle recordings; confirm P95 >= RMS and no
+        // STATS_INCONSISTENT flag in each run.
+        const statsInconsistent: Array<'accel' | 'jerk' | 'gyro'> = [];
+        const eps = 1e-3;
+        const { accelRms, accelP95, jerkRms, jerkP95, gyroRms, gyroP95 } = featureResult.metrics;
+        if (accelP95 + eps < accelRms) statsInconsistent.push('accel');
+        if (jerkP95 + eps < jerkRms) statsInconsistent.push('jerk');
+        if (Number.isFinite(gyroRms ?? Number.NaN) && Number.isFinite(gyroP95 ?? Number.NaN)) {
+            if ((gyroP95 ?? 0) + eps < (gyroRms ?? 0)) statsInconsistent.push('gyro');
+        }
+        if (statsInconsistent.length > 0) {
+            flags.push('STATS_INCONSISTENT');
+        }
+        const statsDebug = statsInconsistent.length > 0
+            ? { inconsistentMetrics: statsInconsistent }
+            : undefined;
+
         return {
             durationMs,
             imu: {
@@ -148,6 +165,7 @@ class SmartRideCoreEngineV1 implements CoreEngine {
             motionClassification,
             inVehicle,
             flags: [...new Set(flags)],
+            statsDebug,
             impactEvents
         };
     }

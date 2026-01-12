@@ -76,8 +76,10 @@ export const extractFeatures = (frames: CoreFrameV1[]): FeatureResult => {
 
     const accelMedian = getMedian(sortedAccel);
     const jerkMedian = getMedian(sortedJerk);
-    const accelP95Raw = sortedAccel.length >= MIN_PERCENTILE_SAMPLES ? getPercentile(sortedAccel, 0.95) : null;
-    const jerkP95Raw = sortedJerk.length >= MIN_PERCENTILE_SAMPLES ? getPercentile(sortedJerk, 0.95) : null;
+    // Keep percentile and RMS on the same sanitized magnitudes; the previous MIN_PERCENTILE_SAMPLES gate
+    // could force P95 to 0 while RMS used real samples.
+    const accelP95Raw = sortedAccel.length > 0 ? getPercentile(sortedAccel, 0.95) : null;
+    const jerkP95Raw = sortedJerk.length > 0 ? getPercentile(sortedJerk, 0.95) : null;
 
     if (sortedAccel.length < MIN_PERCENTILE_SAMPLES || sortedJerk.length < MIN_PERCENTILE_SAMPLES) {
         if (!flags.includes("CORE_METRICS_INCOMPLETE")) {
@@ -104,11 +106,13 @@ export const extractFeatures = (frames: CoreFrameV1[]): FeatureResult => {
             const r = f.gyroRate!;
             return Math.sqrt((r.alpha || 0) ** 2 + (r.beta || 0) ** 2 + (r.gamma || 0) ** 2);
         });
+    const gyroValues = sanitizeMagnitudes(gyroMags);
 
-    if (gyroMags.length > 0) {
-        const sortedGyro = [...gyroMags].sort((a, b) => a - b);
-        metrics.gyroRms = Number(getRMS(gyroMags).toFixed(3));
-        metrics.gyroP95 = Number((getPercentile(sortedGyro, 0.95) || 0).toFixed(3));
+    if (gyroValues.length > 0) {
+        const sortedGyro = [...gyroValues].sort((a, b) => a - b);
+        metrics.gyroRms = Number(getRMS(gyroValues).toFixed(3));
+        const gyroP95Raw = getPercentile(sortedGyro, 0.95);
+        metrics.gyroP95 = Number(((gyroP95Raw ?? 0)).toFixed(3));
     }
 
     return { metrics, accelMags, jerkMags, flags };

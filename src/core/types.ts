@@ -46,7 +46,8 @@ export type CoreFlag =
     | 'GPS_LOW_RATE'
     | 'GPS_STALE_MOST_OF_TIME'
     | 'INSUFFICIENT_DATA'
-    | 'STABLE_OR_STATIC_OBSERVED';
+    | 'STABLE_OR_STATIC_OBSERVED'
+    | 'STATS_INCONSISTENT';
 
 export interface StreamStats {
     samplesCount: number;
@@ -136,6 +137,9 @@ export interface AnalyzeResultV1 {
     motionClassification: MotionClassificationV1;
     inVehicle: InVehicleDetectionV1;
     flags: CoreFlag[];
+    statsDebug?: {
+        inconsistentMetrics: Array<'accel' | 'jerk' | 'gyro'>;
+    };
     impactEvents: ImpactEventV1[];
 }
 
