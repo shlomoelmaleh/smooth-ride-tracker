@@ -111,6 +111,10 @@ export interface InVehicleDetectionV1 {
         jerkRms: number;
         gyroRms: number;
         gpsSpeedMedian?: number | null;
+        gpsHz?: number;
+        gpsAccuracyP95M?: number | null;
+        imuJerkRms?: number;
+        imuGyroRms?: number;
     };
 }
 

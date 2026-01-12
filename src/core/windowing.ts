@@ -6,7 +6,7 @@ import {
     WindowFlag
 } from './types';
 import { extractFeatures } from './features';
-import { classifyMotion, detectInVehicle } from './motion';
+import { applyVehicleHysteresis, classifyMotion } from './motion';
 import { getMedian, getPercentile } from './stats';
 
 const DEFAULT_WINDOW_SIZE_MS = 10000;
@@ -175,7 +175,7 @@ export const buildCoreWindowing = (
 
     const sortedFrames = [...frames].sort((a, b) => a.timestamp - b.timestamp);
     const gpsFixes = buildUniqueGpsFixes(frames);
-    const windows: WindowSummaryV1[] = [];
+    const windows: Array<Omit<WindowSummaryV1, 'inVehicle'>> = [];
 
     for (let windowStart = bounds.start; windowStart < bounds.end; windowStart += stepMs) {
         const windowEnd = Math.min(windowStart + windowSizeMs, bounds.end);
@@ -192,11 +192,6 @@ export const buildCoreWindowing = (
         const metrics = featureResult.metrics;
         const motionClassification = classifyMotion(metrics, windowFrames.length);
         const gpsStats = computeGpsStats(windowGpsFixes, durationMs);
-        const gpsSpeedMedianForDetection = gpsStats.samplesCount >= MIN_GPS_SAMPLES
-            ? gpsStats.speedMedian
-            : null;
-        const inVehicle = detectInVehicle(metrics, gpsSpeedMedianForDetection, motionClassification);
-
         const flags: WindowFlag[] = [];
         if (windowFrames.length < MIN_IMU_SAMPLES) {
             flags.push('INSUFFICIENT_DATA');
@@ -243,11 +238,18 @@ export const buildCoreWindowing = (
                 confidence: motionClassification.confidence,
                 signals: motionClassification.signals
             },
-            inVehicle,
             flags: [...new Set(flags)]
         });
     }
 
-    const segments = buildSegments(windows);
-    return { windowSizeMs, stepMs, windows, segments };
+    const inVehicleDetections = applyVehicleHysteresis(
+        windows.map(window => ({ imu: window.imu, gps: window.gps }))
+    );
+    const windowsWithInVehicle: WindowSummaryV1[] = windows.map((window, index) => ({
+        ...window,
+        inVehicle: inVehicleDetections[index]
+    }));
+
+    const segments = buildSegments(windowsWithInVehicle);
+    return { windowSizeMs, stepMs, windows: windowsWithInVehicle, segments };
 };

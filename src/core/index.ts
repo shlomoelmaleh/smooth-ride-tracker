@@ -131,7 +131,16 @@ class SmartRideCoreEngineV1 implements CoreEngine {
         // 5. Impact Detection
         const impactEvents = detectImpacts(this.frames, featureResult.accelMags, this.options);
         const motionClassification = classifyMotion(featureResult.metrics, framesCount);
-        const inVehicle = detectInVehicle(featureResult.metrics, gpsSpeedMedian, motionClassification);
+        const inVehicle = detectInVehicle(
+            featureResult.metrics,
+            {
+                samplesCount: gpsSamplesCount,
+                observedHz: Number(gpsObservedHz.toFixed(2)),
+                accuracyP95M,
+                speedMedian: gpsSpeedMedian !== null ? Number(gpsSpeedMedian.toFixed(2)) : null
+            },
+            motionClassification
+        );
 
         // Verification: run static, walking, and vehicle recordings; confirm P95 >= RMS and no
         // STATS_INCONSISTENT flag in each run.
