@@ -40,6 +40,7 @@ export interface AnalyzeOptions {
 export type CoreFlag =
     | 'IMU_LOW_RATE'
     | 'IMU_JITTER_HIGH'
+    | 'CORE_METRICS_INCOMPLETE'
     | 'LINACC_MISSING_FALLBACK_TO_ACCG'
     | 'GPS_DENIED_OR_UNAVAILBLE'
     | 'GPS_LOW_RATE'

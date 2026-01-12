@@ -4,7 +4,10 @@
  */
 export const getPercentile = (sorted: number[], p: number): number | null => {
     if (sorted.length === 0) return null;
-    const index = Math.floor(sorted.length * p);
+    if (!Number.isFinite(p)) return null;
+    if (p <= 0) return sorted[0];
+    if (p >= 1) return sorted[sorted.length - 1];
+    const index = Math.ceil((sorted.length - 1) * p);
     return sorted[index];
 };
 

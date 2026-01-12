@@ -1,6 +1,12 @@
 
 import { CoreFrameV1, Vector3, CoreMetricsV1 } from './types';
-import { getRMS, getPercentile } from './stats';
+import { getRMS, getPercentile, getMedian } from './stats';
+
+const MIN_PERCENTILE_SAMPLES = 20;
+
+const sanitizeMagnitudes = (values: number[]): number[] => {
+    return values.filter(v => Number.isFinite(v) && v >= 0);
+};
 
 /**
  * Calculates the Euclidean magnitude of a 3D vector.
@@ -63,14 +69,32 @@ export const extractFeatures = (frames: CoreFrameV1[]): FeatureResult => {
     }
 
     // 3. Summary Metrics
-    const sortedAccel = [...accelMags].sort((a, b) => a - b);
-    const sortedJerk = [...jerkMags].sort((a, b) => a - b);
+    const accelValues = sanitizeMagnitudes(accelMags);
+    const jerkValues = sanitizeMagnitudes(jerkMags);
+    const sortedAccel = [...accelValues].sort((a, b) => a - b);
+    const sortedJerk = [...jerkValues].sort((a, b) => a - b);
+
+    const accelMedian = getMedian(sortedAccel);
+    const jerkMedian = getMedian(sortedJerk);
+    const accelP95Raw = sortedAccel.length >= MIN_PERCENTILE_SAMPLES ? getPercentile(sortedAccel, 0.95) : null;
+    const jerkP95Raw = sortedJerk.length >= MIN_PERCENTILE_SAMPLES ? getPercentile(sortedJerk, 0.95) : null;
+
+    if (sortedAccel.length < MIN_PERCENTILE_SAMPLES || sortedJerk.length < MIN_PERCENTILE_SAMPLES) {
+        if (!flags.includes("CORE_METRICS_INCOMPLETE")) {
+            flags.push("CORE_METRICS_INCOMPLETE");
+        }
+    }
+
+    const accelMedianClamped = accelMedian !== null ? Math.max(0, accelMedian) : null;
+    const jerkMedianClamped = jerkMedian !== null ? Math.max(0, jerkMedian) : null;
+    const accelP95 = accelP95Raw !== null ? Math.max(accelP95Raw, accelMedianClamped ?? 0, 0) : null;
+    const jerkP95 = jerkP95Raw !== null ? Math.max(jerkP95Raw, jerkMedianClamped ?? 0, 0) : null;
 
     const metrics: CoreMetricsV1 = {
-        accelRms: Number(getRMS(accelMags).toFixed(3)),
-        accelP95: Number((getPercentile(sortedAccel, 0.95) || 0).toFixed(3)),
-        jerkRms: Number(getRMS(jerkMags).toFixed(3)),
-        jerkP95: Number((getPercentile(sortedJerk, 0.95) || 0).toFixed(3))
+        accelRms: Number(getRMS(accelValues).toFixed(3)),
+        accelP95: Number(((accelP95 ?? 0)).toFixed(3)),
+        jerkRms: Number(getRMS(jerkValues).toFixed(3)),
+        jerkP95: Number(((jerkP95 ?? 0)).toFixed(3))
     };
 
     // Optional Gyro

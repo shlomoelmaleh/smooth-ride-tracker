@@ -2,6 +2,9 @@
 import { CoreFrameV1, ImpactEventV1, AnalyzeOptions } from './types';
 import { getMedian, getMAD } from './stats';
 
+const MIN_IMPACT_DURATION_MS = 40;
+const MIN_IMPACT_ENERGY_INDEX = 1.5;
+
 /**
  * Detects significant physical events (Impacts) in the acceleration stream.
  */
@@ -75,6 +78,12 @@ const finalizeGroup = (
 
     // Energy Index: (peakAcc - baseline) * log(1 + durationMs)
     const energyIndex = (peakAcc - baseline) * Math.log1p(durationMs);
+    if (durationMs <= 0 || energyIndex <= 0) {
+        return;
+    }
+    if (durationMs < MIN_IMPACT_DURATION_MS && energyIndex < MIN_IMPACT_ENERGY_INDEX) {
+        return;
+    }
 
     // Find nearest GPS context
     let gpsContext: ImpactEventV1['gpsContext'] = undefined;
