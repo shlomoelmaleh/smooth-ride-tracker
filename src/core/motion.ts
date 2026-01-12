@@ -5,14 +5,12 @@ const clamp01 = (value: number): number => {
 };
 
 const scoreLow = (value: number, goodMax: number, badMax: number): number => {
-    if (!Number.isFinite(value)) return 0;
     if (value <= goodMax) return 1;
     if (value >= badMax) return 0;
     return 1 - (value - goodMax) / (badMax - goodMax);
 };
 
 const scoreHigh = (value: number, badMin: number, goodMin: number): number => {
-    if (!Number.isFinite(value)) return 0;
     if (value <= badMin) return 0;
     if (value >= goodMin) return 1;
     return (value - badMin) / (goodMin - badMin);
@@ -28,44 +26,84 @@ const scoreBand = (
     return Math.min(scoreHigh(value, lowBad, lowGood), scoreLow(value, highGood, highBad));
 };
 
-export const classifyMotion = (metrics: CoreMetricsV1, framesCount: number): MotionClassificationV1 => {
-    const accelRms = Number(metrics.accelRms ?? 0);
-    const accelP95 = Number(metrics.accelP95 ?? 0);
-    const jerkRms = Number(metrics.jerkRms ?? 0);
-    const gyroRms = typeof metrics.gyroRms === 'number' ? metrics.gyroRms : 0;
-    const gyroAvailable = typeof metrics.gyroRms === 'number';
+const scoreIfFinite = (value: number, scorer: (value: number) => number): number | null => {
+    return Number.isFinite(value) ? scorer(value) : null;
+};
 
-    if (framesCount < 10 || !Number.isFinite(accelRms) || !Number.isFinite(jerkRms)) {
+const averageScore = (scores: Array<number | null>): number => {
+    const filtered = scores.filter((score): score is number => typeof score === 'number');
+    if (filtered.length === 0) return 0;
+    const total = filtered.reduce((sum, score) => sum + score, 0);
+    return clamp01(total / filtered.length);
+};
+
+export const classifyMotion = (metrics: CoreMetricsV1, framesCount: number): MotionClassificationV1 => {
+    const accelRms = Number.isFinite(metrics.accelRms) ? metrics.accelRms : Number.NaN;
+    const jerkRms = Number.isFinite(metrics.jerkRms) ? metrics.jerkRms : Number.NaN;
+    const gyroRms = Number.isFinite(metrics.gyroRms) ? metrics.gyroRms : Number.NaN;
+    const accelAvailable = Number.isFinite(accelRms);
+    const jerkAvailable = Number.isFinite(jerkRms);
+    const gyroAvailable = Number.isFinite(gyroRms);
+    const availableSignals = [accelAvailable, jerkAvailable, gyroAvailable].filter(Boolean).length;
+
+    const thresholds = {
+        static: {
+            accelRms: { goodMax: 0.2, badMax: 0.6 },
+            jerkRms: { goodMax: 5, badMax: 12 },
+            gyroRms: { goodMax: 2, badMax: 6 }
+        },
+        walking: {
+            accelRms: { badMin: 0.3, goodMin: 1.0 },
+            jerkRms: { badMin: 5, goodMin: 15 },
+            gyroRms: { badMin: 2, goodMin: 5 }
+        },
+        vehicle: {
+            accelRms: { lowBad: 0.15, lowGood: 0.3, highGood: 0.8, highBad: 1.5 },
+            jerkRms: { lowBad: 1, lowGood: 2.5, highGood: 8, highBad: 15 },
+            gyroRms: { lowBad: 0.5, lowGood: 1.5, highGood: 4, highBad: 6 }
+        }
+    };
+
+    if (availableSignals === 0) {
         return {
             state: 'UNKNOWN',
             confidence: 0,
-            signals: { accelRms: accelRms || 0, jerkRms: jerkRms || 0, gyroRms }
+            signals: {
+                accelRms: Number.isFinite(accelRms) ? accelRms : 0,
+                jerkRms: Number.isFinite(jerkRms) ? jerkRms : 0,
+                gyroRms: Number.isFinite(gyroRms) ? gyroRms : 0
+            },
+            debug: {
+                rule: 'UNKNOWN',
+                scores: { static: 0, walking: 0, vehicle: 0 },
+                thresholds
+            }
         };
     }
 
-    // Heuristic thresholds tuned for static/table and walking datasets; no GPS required.
-    const accelScore = scoreLow(accelRms, 0.08, 0.25);
-    const accelP95Available = Number.isFinite(accelP95) && accelP95 > 0;
-    const accelP95Score = accelP95Available ? scoreLow(accelP95, 0.15, 0.45) : 1;
-    const gyroScore = gyroAvailable ? scoreLow(gyroRms, 0.08, 0.25) : 0.7;
-    const jerkPenalty = scoreLow(jerkRms, 0.4, 1.6);
+    const staticScore = averageScore([
+        scoreIfFinite(accelRms, value => scoreLow(value, thresholds.static.accelRms.goodMax, thresholds.static.accelRms.badMax)),
+        scoreIfFinite(jerkRms, value => scoreLow(value, thresholds.static.jerkRms.goodMax, thresholds.static.jerkRms.badMax)),
+        scoreIfFinite(gyroRms, value => scoreLow(value, thresholds.static.gyroRms.goodMax, thresholds.static.gyroRms.badMax))
+    ]);
 
-    let staticScore = accelScore * gyroScore * accelP95Score;
-    staticScore *= (0.65 + 0.35 * jerkPenalty);
+    const walkingScore = averageScore([
+        scoreIfFinite(accelRms, value => scoreHigh(value, thresholds.walking.accelRms.badMin, thresholds.walking.accelRms.goodMin)),
+        scoreIfFinite(jerkRms, value => scoreHigh(value, thresholds.walking.jerkRms.badMin, thresholds.walking.jerkRms.goodMin)),
+        scoreIfFinite(gyroRms, value => scoreHigh(value, thresholds.walking.gyroRms.badMin, thresholds.walking.gyroRms.goodMin))
+    ]);
 
-    const veryStatic = accelRms <= 0.08 && gyroRms <= 0.08;
-    if (veryStatic) {
-        staticScore = Math.max(staticScore, 0.9);
-    }
-
-    const walkingScore =
-        scoreBand(jerkRms, 0.5, 0.9, 3.2, 5.0) *
-        scoreBand(gyroRms, 0.2, 0.4, 2.4, 3.8) *
-        scoreHigh(accelRms, 0.12, 0.25);
-    const vehicleScore =
-        scoreBand(jerkRms, 0.25, 0.5, 1.6, 2.8) *
-        scoreLow(gyroRms, 0.1, 0.3) *
-        scoreBand(accelRms, 0.06, 0.12, 0.6, 1.2);
+    const vehicleScore = averageScore([
+        scoreIfFinite(accelRms, value =>
+            scoreBand(value, thresholds.vehicle.accelRms.lowBad, thresholds.vehicle.accelRms.lowGood, thresholds.vehicle.accelRms.highGood, thresholds.vehicle.accelRms.highBad)
+        ),
+        scoreIfFinite(jerkRms, value =>
+            scoreBand(value, thresholds.vehicle.jerkRms.lowBad, thresholds.vehicle.jerkRms.lowGood, thresholds.vehicle.jerkRms.highGood, thresholds.vehicle.jerkRms.highBad)
+        ),
+        scoreIfFinite(gyroRms, value =>
+            scoreBand(value, thresholds.vehicle.gyroRms.lowBad, thresholds.vehicle.gyroRms.lowGood, thresholds.vehicle.gyroRms.highGood, thresholds.vehicle.gyroRms.highBad)
+        )
+    ]);
 
     const scores: Array<{ state: MotionState; score: number }> = [
         { state: 'STATIC', score: staticScore },
@@ -78,16 +116,31 @@ export const classifyMotion = (metrics: CoreMetricsV1, framesCount: number): Mot
     const runnerUp = sortedScores[1];
 
     const separation = clamp01(top.score - runnerUp.score);
-    let confidence = clamp01(top.score * 0.85 + separation * 0.5);
-    if (!gyroAvailable) {
-        confidence *= 0.7;
+    const availabilityFactor = 0.6 + 0.4 * (availableSignals / 3);
+    const sampleFactor = framesCount < 10 ? 0.6 : 1;
+    let confidence = clamp01(separation * availabilityFactor * sampleFactor);
+    if (confidence === 0) {
+        confidence = clamp01(top.score * 0.6 * availabilityFactor * sampleFactor);
     }
 
-    const state: MotionState = confidence >= 0.3 ? top.state : 'UNKNOWN';
+    const state: MotionState = top.score >= 0.35 && confidence >= 0.1 ? top.state : 'UNKNOWN';
 
     return {
         state,
         confidence: Number(confidence.toFixed(3)),
-        signals: { accelRms, jerkRms, gyroRms }
+        signals: {
+            accelRms: Number.isFinite(accelRms) ? accelRms : 0,
+            jerkRms: Number.isFinite(jerkRms) ? jerkRms : 0,
+            gyroRms: Number.isFinite(gyroRms) ? gyroRms : 0
+        },
+        debug: {
+            rule: state,
+            scores: {
+                static: Number(staticScore.toFixed(3)),
+                walking: Number(walkingScore.toFixed(3)),
+                vehicle: Number(vehicleScore.toFixed(3))
+            },
+            thresholds
+        }
     };
 };

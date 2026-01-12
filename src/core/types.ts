@@ -74,6 +74,31 @@ export interface MotionClassificationV1 {
         jerkRms: number;
         gyroRms: number;
     };
+    debug?: {
+        rule: MotionState;
+        scores: {
+            static: number;
+            walking: number;
+            vehicle: number;
+        };
+        thresholds: {
+            static: {
+                accelRms: { goodMax: number; badMax: number };
+                jerkRms: { goodMax: number; badMax: number };
+                gyroRms: { goodMax: number; badMax: number };
+            };
+            walking: {
+                accelRms: { badMin: number; goodMin: number };
+                jerkRms: { badMin: number; goodMin: number };
+                gyroRms: { badMin: number; goodMin: number };
+            };
+            vehicle: {
+                accelRms: { lowBad: number; lowGood: number; highGood: number; highBad: number };
+                jerkRms: { lowBad: number; lowGood: number; highGood: number; highBad: number };
+                gyroRms: { lowBad: number; lowGood: number; highGood: number; highBad: number };
+            };
+        };
+    };
 }
 
 export interface ImpactEventV1 {
