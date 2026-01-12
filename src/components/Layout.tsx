@@ -18,8 +18,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </main>
       <footer className="text-center text-xs text-muted-foreground py-4 space-y-1">
         <p>SmartRide &copy; {new Date().getFullYear()} | Privacy Focused Ride Tracking | v{pkg.version}</p>
-        <p className="opacity-50 font-mono text-[9px]">Build: {new Date('2026-01-12T09:45:00+02:00').toISOString()}</p>
-        <p className="hidden">Internal: Enriched Audit Export (Core Analysis + Privacy Sanitization).</p>
+        <p className="opacity-50 font-mono text-[9px]">Build: {new Date('2026-01-12T10:15:00+02:00').toISOString()}</p>
+        <p className="hidden">Internal: Core Engine v0.5.4 (GPS Stats Fix - Unique Fixes Analysis).</p>
       </footer>
     </div>
   );
