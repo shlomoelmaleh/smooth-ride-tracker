@@ -138,7 +138,6 @@ export const detectInVehicle = (
     };
 
     const gpsUsable = isGpsWindowUsableForVehicle(window.gps);
-    const imuVeto = isImuWalkingVeto(window.imu);
     const signals = buildVehicleSignals(window.imu, window.gps);
 
     if (vehicleCandidateOn(window)) {
@@ -146,15 +145,6 @@ export const detectInVehicle = (
             value: true,
             confidence: 0.95,
             reason: 'gps_speed_hysteresis_on',
-            signals
-        };
-    }
-
-    if (!gpsUsable && imuVeto) {
-        return {
-            value: false,
-            confidence: 0.6,
-            reason: 'imu_walking_veto',
             signals
         };
     }
@@ -174,7 +164,6 @@ export const applyVehicleHysteresis = (windows: VehicleWindowInput[]): InVehicle
 
     return windows.map(window => {
         const gpsUsable = isGpsWindowUsableForVehicle(window.gps);
-        const imuVeto = isImuWalkingVeto(window.imu);
         const signals = buildVehicleSignals(window.imu, window.gps);
         let entered = false;
         let exited = false;
@@ -219,15 +208,6 @@ export const applyVehicleHysteresis = (windows: VehicleWindowInput[]): InVehicle
                 value: false,
                 confidence: 0.85,
                 reason: 'gps_speed_hysteresis_off',
-                signals
-            };
-        }
-
-        if (!currentInVehicle && !gpsUsable && imuVeto) {
-            return {
-                value: false,
-                confidence: 0.6,
-                reason: 'imu_walking_veto',
                 signals
             };
         }
@@ -320,10 +300,6 @@ export const classifyMotion = (metrics: CoreMetricsV1, framesCount: number): Mot
     }
 
     let state: MotionState = top.score >= 0.35 && confidence >= 0.1 ? top.state : 'UNKNOWN';
-    if (walkingScore >= 0.7 && state !== 'STATIC' && top.score < 0.6) {
-        state = 'UNKNOWN';
-    }
-
     return {
         state,
         confidence: Number(confidence.toFixed(3)),

@@ -6,7 +6,8 @@ import {
     DisplaySegmentSummaryV1,
     WindowFlag,
     CoreStateV1,
-    WindowEventV1
+    WindowEventV1,
+    ManualEventV1
 } from './types';
 import { extractFeatures } from './features';
 import { applyVehicleHysteresis } from './motion';
@@ -260,7 +261,7 @@ const classifyWindowState = (
     const movingCandidate = imu.accelRms >= CORE_ANALYSIS_CONFIG.imu.movingAccelRmsMin
         || imu.jerkRms >= CORE_ANALYSIS_CONFIG.imu.movingJerkRmsMin;
 
-    if (movingCandidate && !walkingVeto) {
+    if (movingCandidate) {
         return {
             state: 'MOVING',
             confidence: Number((0.6 * dataQuality).toFixed(3)),
@@ -280,7 +281,7 @@ const classifyWindowState = (
     return {
         state: 'UNKNOWN',
         confidence: Number((0.35 * dataQuality).toFixed(3)),
-        reason: walkingVeto ? 'imu_walking_veto' : 'signals_ambiguous',
+        reason: 'signals_ambiguous',
         signals: {
             accelRms: imu.accelRms,
             jerkRms: imu.jerkRms,
@@ -503,7 +504,8 @@ export const buildDisplaySegments = (
 export const buildCoreWindowing = (
     frames: CoreFrameV1[],
     windowSizeMs: number = DEFAULT_WINDOW_SIZE_MS,
-    stepMs: number = DEFAULT_WINDOW_STEP_MS
+    stepMs: number = DEFAULT_WINDOW_STEP_MS,
+    manualEvents: ManualEventV1[] = []
 ): WindowingResultV1 => {
     const bounds = getWindowTimeBounds(frames);
     if (!bounds) {
@@ -512,6 +514,17 @@ export const buildCoreWindowing = (
 
     const sortedFrames = [...frames].sort((a, b) => a.timestamp - b.timestamp);
     const gpsFixes = buildUniqueGpsFixes(frames);
+    const normalizedManualEvents = manualEvents
+        .map((event) => {
+            const tSec = Number.isFinite(event.tMs)
+                ? (Number(event.tMs) - bounds.start) / 1000
+                : event.tSec;
+            return {
+                tSec: Number.isFinite(tSec) ? round(tSec, 1) : event.tSec,
+                kind: event.kind
+            };
+        })
+        .filter((event) => Number.isFinite(event.tSec));
     const windows: WindowSummaryV1[] = [];
     const events: WindowEventV1[] = [];
 
@@ -521,7 +534,11 @@ export const buildCoreWindowing = (
 
         const windowFrames = sortedFrames.filter(frame => frame.timestamp >= windowStart && frame.timestamp < windowEnd);
         const windowGpsFixes = gpsFixes.filter(fix => fix.timestamp >= windowStart && fix.timestamp < windowEnd);
-        if (windowFrames.length === 0 && windowGpsFixes.length === 0) {
+        const windowManualEvents = normalizedManualEvents.filter(event => {
+            const tMs = bounds.start + event.tSec * 1000;
+            return tMs >= windowStart && tMs < windowEnd;
+        });
+        if (windowFrames.length === 0 && windowGpsFixes.length === 0 && windowManualEvents.length === 0) {
             continue;
         }
 
@@ -603,6 +620,7 @@ export const buildCoreWindowing = (
                 }
             },
             event: eventCandidate?.event ?? null,
+            manualEvents: windowManualEvents,
             flags: [...new Set(flags)]
         };
 

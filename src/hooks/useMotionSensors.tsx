@@ -22,6 +22,8 @@ export const useMotionSensors = () => {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const diagnosticsRef = useRef(createDiagnosticsManager());
   const baselineTimersRef = useRef<number[]>([]);
+  const diagnosticsPrevRef = useRef<string>('');
+  const findingsCountRef = useRef(0);
 
   const [hasAccelerometer, setHasAccelerometer] = useState(false);
   const [hasGeolocation, setHasGeolocation] = useState(false);
@@ -44,10 +46,30 @@ export const useMotionSensors = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const current = activeDiagnostics.map(issue => issue.kind).sort().join('|');
+    if (current !== diagnosticsPrevRef.current) {
+      console.info('Recording: diagnostics updated', {
+        active: activeDiagnostics.map(issue => issue.kind),
+        status: diagnosticsSummary.status,
+        issuesCount: diagnosticsSummary.issuesCount
+      });
+      diagnosticsPrevRef.current = current;
+    }
+  }, [activeDiagnostics, diagnosticsSummary]);
+
+  useEffect(() => {
+    if (sessionFindings.length !== findingsCountRef.current) {
+      console.info('Recording: session findings updated', { count: sessionFindings.length });
+      findingsCountRef.current = sessionFindings.length;
+    }
+  }, [sessionFindings.length]);
+
   const startTracking = useCallback(async () => {
     const permissions = await requestSensorPermissions();
     setPermissions(permissions);
     diagnosticsRef.current.updatePermissions(permissions);
+    console.info('Recording: permissions checked', permissions);
     if (permissions.motion === 'denied' || permissions.location === 'denied') {
       toast.error('Required permissions denied');
       return false;
@@ -70,6 +92,7 @@ export const useMotionSensors = () => {
     setActiveDiagnostics(startSnapshot.activeIssues);
     setSessionFindings(startSnapshot.sessionFindings);
     setDiagnosticsSummary(startSnapshot.summary);
+    console.info('Recording: started');
     baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
     baselineTimersRef.current = [
       window.setTimeout(() => {
@@ -145,6 +168,7 @@ export const useMotionSensors = () => {
     setActiveDiagnostics([]);
     setDiagnosticsSummary({ status: 'OK', issuesCount: 0 });
     setSessionFindings(snapshot.sessionFindings);
+    console.info('Recording: stopped');
 
     return {
       dataPoints: dataPointsRef.current,

@@ -405,23 +405,21 @@ export const createDiagnosticsManager = () => {
     resetAll: (nowMs: number) => {
       isRecording = false;
       sessionStartMs = null;
+      lastHealth = null;
       lastMotionSampleMs = null;
       lastGpsSampleMs = null;
       resetIssueStates();
-      if (lastHealth) {
-        updateStates(nowMs);
-      }
+      updateStates(nowMs);
       return buildSnapshot();
     },
     startSession: (nowMs: number) => {
       isRecording = true;
       sessionStartMs = nowMs;
+      lastHealth = null;
       lastMotionSampleMs = null;
       lastGpsSampleMs = null;
       resetIssueStates();
-      if (lastHealth) {
-        updateStates(nowMs);
-      }
+      updateStates(nowMs);
       return buildSnapshot();
     },
     stopSession: (nowMs: number) => {

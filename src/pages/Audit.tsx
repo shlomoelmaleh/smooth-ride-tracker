@@ -27,6 +27,9 @@ import { buildCoreWindowing } from '@/core/windowing';
 import { AnalyzeResultV1, CoreFrameV1, SegmentSummaryV1, WindowingResultV1 } from '@/core/types';
 import { createDiagnosticsManager, DiagnosticEvent, DiagnosticIssue, DiagnosticsSummary } from '@/diagnostics/diagnostics';
 
+type RideProfile = 'private_car' | 'bus';
+type ManualEvent = { tSec: number; kind: 'tap'; tMs: number };
+
 const Audit = () => {
     const [permissions, setPermissions] = useState<{ motion: string, location: string }>({
         motion: 'prompt',
@@ -44,10 +47,13 @@ const Audit = () => {
     const [testResults, setTestResults] = useState<CollectionHealth | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalyzeResultV1 | null>(null);
     const [coreWindowing, setCoreWindowing] = useState<WindowingResultV1 | null>(null);
-    const [manualEvents, setManualEvents] = useState<{ tSec: number; kind: "tap"; note?: string }[]>([]);
+    const [manualEvents, setManualEvents] = useState<ManualEvent[]>([]);
     const [activeDiagnostics, setActiveDiagnostics] = useState<DiagnosticIssue[]>([]);
     const [sessionFindings, setSessionFindings] = useState<DiagnosticEvent[]>([]);
     const [diagnosticsSummary, setDiagnosticsSummary] = useState<DiagnosticsSummary>({ status: 'OK', issuesCount: 0 });
+    const [selectedProfile, setSelectedProfile] = useState<RideProfile | null>(null);
+    const [sessionProfile, setSessionProfile] = useState<RideProfile | null>(null);
+    const [profileLocked, setProfileLocked] = useState(false);
 
     const collectorRef = useRef<{ stop: () => void } | null>(null);
     const engineRef = useRef(createEngine());
@@ -55,6 +61,9 @@ const Audit = () => {
     const auditFramesRef = useRef<CoreFrameV1[]>([]);
     const recordingStartMsRef = useRef<number | null>(null);
     const baselineTimersRef = useRef<number[]>([]);
+    const manualEventsRef = useRef<ManualEvent[]>([]);
+    const diagnosticsPrevRef = useRef<string>('');
+    const findingsCountRef = useRef(0);
 
     // Toggle to omit per-window summaries from exported Audit JSON.
     const includeWindowSummaries = true;
@@ -73,6 +82,25 @@ const Audit = () => {
         };
     }, []);
 
+    useEffect(() => {
+        const current = activeDiagnostics.map(issue => issue.kind).sort().join('|');
+        if (current !== diagnosticsPrevRef.current) {
+            console.info('Audit: diagnostics updated', {
+                active: activeDiagnostics.map(issue => issue.kind),
+                status: diagnosticsSummary.status,
+                issuesCount: diagnosticsSummary.issuesCount
+            });
+            diagnosticsPrevRef.current = current;
+        }
+    }, [activeDiagnostics, diagnosticsSummary]);
+
+    useEffect(() => {
+        if (sessionFindings.length !== findingsCountRef.current) {
+            console.info('Audit: session findings updated', { count: sessionFindings.length });
+            findingsCountRef.current = sessionFindings.length;
+        }
+    }, [sessionFindings.length]);
+
     const handleRequestPermissions = async () => {
         const perms = await requestSensorPermissions();
         setPermissions({ motion: perms.motion, location: perms.location });
@@ -80,11 +108,28 @@ const Audit = () => {
         const caps = await detectCapabilities(); // Refresh
         setCapabilities(caps);
         diagnosticsRef.current.updateCapabilities(caps);
+        console.info('Audit: permissions checked', perms);
+    };
+
+    const handleProfileSelect = (profile: RideProfile) => {
+        if (profileLocked || isTesting) {
+            console.error('Audit: profile change blocked during recording', { attempted: profile, active: sessionProfile });
+            return;
+        }
+        setSelectedProfile(profile);
+        console.info('Audit: profile selected', { profile });
     };
 
     const runAuditTest = () => {
+        if (!selectedProfile) {
+            toast.error('Select a ride profile before recording');
+            console.warn('Audit: recording blocked, no profile selected');
+            return;
+        }
         if (isLive) return; // Prevent concurrent collectors
         setIsTesting(true);
+        setProfileLocked(true);
+        setSessionProfile(selectedProfile);
         setTestProgress(0);
         setElapsedTime(0);
         setTestResults(null);
@@ -93,6 +138,8 @@ const Audit = () => {
         engineRef.current.reset();
         auditFramesRef.current = [];
         setManualEvents([]);
+        manualEventsRef.current = [];
+        console.info('Audit: recording started', { profile: selectedProfile, durationMs: selectedDuration });
         const duration = selectedDuration;
         const startAt = Date.now();
         const diagnosticsSnapshot = diagnosticsRef.current.startSession(startAt);
@@ -157,6 +204,8 @@ const Audit = () => {
                     const finalSnapshot = diagnosticsRef.current.stopSession(now);
                     setSessionFindings(finalSnapshot.sessionFindings);
                     setDiagnosticsSummary(finalSnapshot.summary);
+                    setProfileLocked(false);
+                    console.info('Audit: recording stopped', { elapsedMs: elapsed, profile: selectedProfile });
 
                     // Finalize Analysis
                     if (capabilities) {
@@ -169,7 +218,7 @@ const Audit = () => {
                     setAnalysisResult(analysis);
 
                     const analysisSnapshot = JSON.stringify(analysis);
-                    const windowingResult = buildCoreWindowing(auditFramesRef.current);
+                    const windowingResult = buildCoreWindowing(auditFramesRef.current, undefined, undefined, manualEventsRef.current);
                     setCoreWindowing(windowingResult);
                     const analysisSnapshotAfter = JSON.stringify(analysis);
 
@@ -186,11 +235,14 @@ const Audit = () => {
         if (!isTesting || recordingStartMsRef.current === null) return;
         const now = Date.now();
         const tSec = Math.round(((now - recordingStartMsRef.current) / 1000) * 10) / 10;
-        setManualEvents((prev) => [...prev, { tSec, kind: "tap" }]);
+        const nextEvent: ManualEvent = { tSec, kind: 'tap', tMs: now };
+        setManualEvents((prev) => [...prev, nextEvent]);
+        manualEventsRef.current = [...manualEventsRef.current, nextEvent];
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
             navigator.vibrate(10);
         }
         toast.success('Event marked');
+        console.info('Audit: manual event', { tSec, kind: 'tap' });
     };
 
     const toggleLiveSampling = () => {
@@ -262,6 +314,7 @@ const Audit = () => {
         if (!analysis) return null;
 
         return {
+            rideProfile: sessionProfile,
             durationMs: analysis.durationMs,
             imu: {
                 hz: analysis.imu.observedHz,
@@ -292,7 +345,8 @@ const Audit = () => {
             topWindowEvents: windowing?.events.slice(0, 5) || [],
             windowsCount: windowing?.windows.length || 0,
             segmentsCount: windowing?.segments.length || 0,
-            topSegments: windowing ? pickTopSegments(windowing.segments, 5) : []
+            topSegments: windowing ? pickTopSegments(windowing.segments, 5) : [],
+            manualEventsCount: manualEvents.length
         };
     };
 
@@ -340,8 +394,11 @@ const Audit = () => {
                 windows: coreWindowing.windows
             }
             : undefined;
-        const manualEventsForExport = manualEvents.length > 0 ? manualEvents : undefined;
+        const manualEventsForExport = manualEvents.length > 0
+            ? manualEvents.map(({ tSec, kind }) => ({ tSec, kind }))
+            : undefined;
         const sessionFindingsForExport = sessionFindings.length > 0 ? sessionFindings : undefined;
+        const auditMetadata = sessionProfile ? { rideProfile: sessionProfile, profileLocked: true } : undefined;
         return {
             generatedAt: new Date().toISOString(),
             app: { name: "SmartRide", version: pkg.version, schema: 2 },
@@ -351,6 +408,7 @@ const Audit = () => {
             },
             permissions,
             capabilities,
+            ...(auditMetadata ? { auditMetadata } : {}),
             testDurationSec: selectedDuration / 1000,
             observed: testResults || liveHealth,
             coreAnalysis: sanitizedCore,
@@ -419,6 +477,45 @@ const Audit = () => {
                     </div>
                 </div>
 
+                {/* RIDE PROFILE */}
+                <Card className="border-none bg-card/40 shadow-none ring-1 ring-border/50 rounded-3xl overflow-hidden">
+                    <CardHeader className="pb-4">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">Ride Profile</h3>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                            {([
+                                { id: 'private_car', label: 'Private Car' },
+                                { id: 'bus', label: 'Bus' }
+                            ] as const).map(option => {
+                                const isSelected = selectedProfile === option.id;
+                                return (
+                                    <Button
+                                        key={option.id}
+                                        type="button"
+                                        variant={isSelected ? 'default' : 'outline'}
+                                        disabled={profileLocked || isTesting}
+                                        onClick={() => handleProfileSelect(option.id)}
+                                        className={`h-12 rounded-2xl font-bold uppercase tracking-widest text-[10px] ${isSelected ? 'shadow-lg shadow-primary/20' : ''}`}
+                                    >
+                                        {option.label}
+                                    </Button>
+                                );
+                            })}
+                        </div>
+                        {!selectedProfile && (
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 text-center">
+                                Select a profile to enable recording
+                            </p>
+                        )}
+                        {(profileLocked || isTesting) && (
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600/70 text-center">
+                                Profile locked during recording
+                            </p>
+                        )}
+                    </CardContent>
+                </Card>
+
                 {/* LIVE SNAPSHOT */}
                 <Card className="border-none bg-card/40 shadow-none ring-1 ring-border/50 rounded-3xl overflow-hidden border-l-2 border-l-blue-500/20">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -480,7 +577,7 @@ const Audit = () => {
                                 </p>
                                 <Button
                                     onClick={runAuditTest}
-                                    disabled={isLive}
+                                    disabled={isLive || !selectedProfile}
                                     className="rounded-full px-10 h-14 font-black uppercase tracking-widest shadow-xl shadow-primary/20"
                                 >
                                     Run Audit ({selectedDuration / 1000}s)

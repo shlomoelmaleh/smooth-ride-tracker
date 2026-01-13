@@ -144,6 +144,12 @@ export interface WindowEventV1 {
     };
 }
 
+export interface ManualEventV1 {
+    tSec: number;
+    kind: 'tap';
+    tMs?: number;
+}
+
 export interface AnalyzeResultV1 {
     durationMs: number;
     imu: StreamStats & CoreMetricsV1;
@@ -202,6 +208,7 @@ export interface WindowSummaryV1 {
     };
     inVehicle: InVehicleDetectionV1;
     event?: WindowEventV1 | null;
+    manualEvents?: ManualEventV1[];
     flags: WindowFlag[];
 }
 
