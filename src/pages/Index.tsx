@@ -120,8 +120,14 @@ const Index = () => {
   };
 
   const handleStopTracking = async () => {
-    const { dataPoints, gpsUpdates, collectionHealth: finalHealth, capabilities: finalCaps } = stopTracking();
-    const completed = await endRide(dataPoints, gpsUpdates, finalHealth || undefined, finalCaps || undefined);
+    const { dataPoints, gpsUpdates, sessionFindings, collectionHealth: finalHealth, capabilities: finalCaps } = stopTracking();
+    const completed = await endRide(
+      dataPoints,
+      gpsUpdates,
+      finalHealth || undefined,
+      finalCaps || undefined,
+      sessionFindings
+    );
     if (completed) {
       setCompletedRide(completed);
       toast.success('Ride captured');

@@ -14,7 +14,6 @@ import {
     AlertTriangle,
     Info,
     CheckCircle2,
-    XCircle,
     Clock,
     Square
 } from 'lucide-react';
@@ -26,6 +25,7 @@ import { CapabilitiesReport, CollectionHealth, StreamHealth, UnifiedSampleV2 } f
 import { createEngine } from '@/core';
 import { buildCoreWindowing } from '@/core/windowing';
 import { AnalyzeResultV1, CoreFrameV1, SegmentSummaryV1, WindowingResultV1 } from '@/core/types';
+import { createDiagnosticsManager, DiagnosticEvent, DiagnosticIssue, DiagnosticsSummary } from '@/diagnostics/diagnostics';
 
 const Audit = () => {
     const [permissions, setPermissions] = useState<{ motion: string, location: string }>({
@@ -44,13 +44,17 @@ const Audit = () => {
     const [testResults, setTestResults] = useState<CollectionHealth | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalyzeResultV1 | null>(null);
     const [coreWindowing, setCoreWindowing] = useState<WindowingResultV1 | null>(null);
-    const [flags, setFlags] = useState<string[]>([]);
     const [manualEvents, setManualEvents] = useState<{ tSec: number; kind: "tap"; note?: string }[]>([]);
+    const [activeDiagnostics, setActiveDiagnostics] = useState<DiagnosticIssue[]>([]);
+    const [sessionFindings, setSessionFindings] = useState<DiagnosticEvent[]>([]);
+    const [diagnosticsSummary, setDiagnosticsSummary] = useState<DiagnosticsSummary>({ status: 'OK', issuesCount: 0 });
 
     const collectorRef = useRef<{ stop: () => void } | null>(null);
     const engineRef = useRef(createEngine());
+    const diagnosticsRef = useRef(createDiagnosticsManager());
     const auditFramesRef = useRef<CoreFrameV1[]>([]);
     const recordingStartMsRef = useRef<number | null>(null);
+    const baselineTimersRef = useRef<number[]>([]);
 
     // Toggle to omit per-window summaries from exported Audit JSON.
     const includeWindowSummaries = true;
@@ -59,17 +63,23 @@ const Audit = () => {
         const checkInitial = async () => {
             const caps = await detectCapabilities();
             setCapabilities(caps);
-            setFlags(caps.flags);
+            diagnosticsRef.current.updateCapabilities(caps);
         };
         checkInitial();
-        return () => collectorRef.current?.stop();
+        return () => {
+            collectorRef.current?.stop();
+            baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+            baselineTimersRef.current = [];
+        };
     }, []);
 
     const handleRequestPermissions = async () => {
         const perms = await requestSensorPermissions();
         setPermissions({ motion: perms.motion, location: perms.location });
+        diagnosticsRef.current.updatePermissions(perms);
         const caps = await detectCapabilities(); // Refresh
         setCapabilities(caps);
+        diagnosticsRef.current.updateCapabilities(caps);
     };
 
     const runAuditTest = () => {
@@ -83,10 +93,28 @@ const Audit = () => {
         engineRef.current.reset();
         auditFramesRef.current = [];
         setManualEvents([]);
-
         const duration = selectedDuration;
         const startAt = Date.now();
+        const diagnosticsSnapshot = diagnosticsRef.current.startSession(startAt);
+        setActiveDiagnostics(diagnosticsSnapshot.activeIssues);
+        setSessionFindings(diagnosticsSnapshot.sessionFindings);
+        setDiagnosticsSummary(diagnosticsSnapshot.summary);
         recordingStartMsRef.current = startAt;
+        baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+        baselineTimersRef.current = [
+            window.setTimeout(() => {
+                const snapshot = diagnosticsRef.current.tick(Date.now());
+                setActiveDiagnostics(snapshot.activeIssues);
+                setSessionFindings(snapshot.sessionFindings);
+                setDiagnosticsSummary(snapshot.summary);
+            }, 250),
+            window.setTimeout(() => {
+                const snapshot = diagnosticsRef.current.tick(Date.now());
+                setActiveDiagnostics(snapshot.activeIssues);
+                setSessionFindings(snapshot.sessionFindings);
+                setDiagnosticsSummary(snapshot.summary);
+            }, 5000)
+        ];
 
         const collector = startCollectors({
             onSample: (sample) => {
@@ -108,17 +136,27 @@ const Audit = () => {
                 };
                 engineRef.current.ingest(frame);
                 auditFramesRef.current.push(frame);
+                diagnosticsRef.current.recordSample(sample);
             },
             onHealthUpdate: (health) => {
                 const now = Date.now();
                 const elapsed = now - startAt;
                 setElapsedTime(Math.floor(elapsed / 1000));
                 setTestProgress(Math.min(100, (elapsed / duration) * 100));
+                const diagnosticsSnapshot = diagnosticsRef.current.updateHealth(health, now);
+                setActiveDiagnostics(diagnosticsSnapshot.activeIssues);
+                setSessionFindings(diagnosticsSnapshot.sessionFindings);
+                setDiagnosticsSummary(diagnosticsSnapshot.summary);
 
                 if (elapsed >= duration) {
                     collector.stop();
                     setIsTesting(false);
                     setTestResults(health);
+                    baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+                    baselineTimersRef.current = [];
+                    const finalSnapshot = diagnosticsRef.current.stopSession(now);
+                    setSessionFindings(finalSnapshot.sessionFindings);
+                    setDiagnosticsSummary(finalSnapshot.summary);
 
                     // Finalize Analysis
                     if (capabilities) {
@@ -135,23 +173,9 @@ const Audit = () => {
                     setCoreWindowing(windowingResult);
                     const analysisSnapshotAfter = JSON.stringify(analysis);
 
-                    // Extract flags from final health + analysis
-                    const newFlags = [...(capabilities?.flags || [])];
-                    if ((health.gps?.observedHz || 0) < 0.5) newFlags.push("Extremely low GPS update rate");
-                    if (health.gps && health.gps.samplesCount < 3) newFlags.push("Insufficient GPS samples for reliable stats");
-                    if ((health.motion?.dtMsP95 || 0) > (health.motion?.dtMsMedian || 1) * 4) newFlags.push("Severe sensor jitter profile");
-
-                    // Add engine flags
-                    analysis.flags.forEach(f => {
-                        const message = f.replace(/_/g, ' ');
-                        if (!newFlags.includes(message)) newFlags.push(message);
-                    });
-
                     if (analysisSnapshotAfter !== analysisSnapshot) {
-                        newFlags.push("WINDOWING_MUTATED_ANALYSIS");
+                        console.warn('Audit: Windowing mutated analysis output');
                     }
-
-                    setFlags([...new Set(newFlags)]);
                 }
             }
         });
@@ -174,11 +198,32 @@ const Audit = () => {
         if (isLive) {
             collectorRef.current?.stop();
             setIsLive(false);
+            baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+            baselineTimersRef.current = [];
+            const snapshot = diagnosticsRef.current.resetAll(Date.now());
+            setActiveDiagnostics(snapshot.activeIssues);
+            setSessionFindings(snapshot.sessionFindings);
+            setDiagnosticsSummary(snapshot.summary);
         } else {
             setIsLive(true);
+            baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+            baselineTimersRef.current = [];
+            const snapshot = diagnosticsRef.current.resetAll(Date.now());
+            setActiveDiagnostics(snapshot.activeIssues);
+            setSessionFindings(snapshot.sessionFindings);
+            setDiagnosticsSummary(snapshot.summary);
             const collector = startCollectors({
-                onSample: (s) => setLiveData(s),
-                onHealthUpdate: (h) => setLiveHealth(h)
+                onSample: (s) => {
+                    setLiveData(s);
+                    diagnosticsRef.current.recordSample(s);
+                },
+                onHealthUpdate: (h) => {
+                    setLiveHealth(h);
+                    const diagnosticsSnapshot = diagnosticsRef.current.updateHealth(h, Date.now());
+                    setActiveDiagnostics(diagnosticsSnapshot.activeIssues);
+                    setSessionFindings(diagnosticsSnapshot.sessionFindings);
+                    setDiagnosticsSummary(diagnosticsSnapshot.summary);
+                }
             });
             collectorRef.current = collector;
         }
@@ -251,6 +296,40 @@ const Audit = () => {
         };
     };
 
+    const buildFlagsFromFindings = (findings: DiagnosticEvent[]) => {
+        const grouped = new Map<string, { kind: string; severity: string; firstSeenSec: number; lastSeenSec: number }>();
+        findings.forEach((finding) => {
+            const key = finding.kind;
+            const firstSeen = finding.tStartSec;
+            const lastSeen = finding.tEndSec ?? finding.tStartSec;
+            const existing = grouped.get(key);
+            if (!existing) {
+                grouped.set(key, {
+                    kind: finding.kind,
+                    severity: finding.severity,
+                    firstSeenSec: firstSeen,
+                    lastSeenSec: lastSeen
+                });
+                return;
+            }
+            existing.firstSeenSec = Math.min(existing.firstSeenSec, firstSeen);
+            existing.lastSeenSec = Math.max(existing.lastSeenSec, lastSeen);
+        });
+        return Array.from(grouped.values());
+    };
+
+    const formatSeconds = (value: number | null) => {
+        if (value === null || Number.isNaN(value)) return '-';
+        return `${value.toFixed(1)}s`;
+    };
+
+    const formatFindingWindow = (finding: DiagnosticEvent) => {
+        const start = formatSeconds(finding.tStartSec);
+        const end = finding.tEndSec === null ? 'open' : formatSeconds(finding.tEndSec);
+        const duration = finding.durationSec === null ? '-' : formatSeconds(finding.durationSec);
+        return `${start} -> ${end} (${duration})`;
+    };
+
     const generateReport = () => {
         const sanitizedCore = sanitizeCoreAnalysisForExport(analysisResult);
         const coreAnalysisWindows = includeWindowSummaries && coreWindowing
@@ -262,6 +341,7 @@ const Audit = () => {
             }
             : undefined;
         const manualEventsForExport = manualEvents.length > 0 ? manualEvents : undefined;
+        const sessionFindingsForExport = sessionFindings.length > 0 ? sessionFindings : undefined;
         return {
             generatedAt: new Date().toISOString(),
             app: { name: "SmartRide", version: pkg.version, schema: 2 },
@@ -277,9 +357,10 @@ const Audit = () => {
             coreSummary: buildCoreSummary(analysisResult, coreWindowing),
             coreAnalysisWindows,
             coreSegments: coreWindowing?.segments,
-            coreEvents: coreWindowing?.events,
+            coreWindowingEvents: coreWindowing?.events,
+            ...(sessionFindingsForExport ? { sessionFindings: sessionFindingsForExport } : {}),
             ...(manualEventsForExport ? { manualEvents: manualEventsForExport } : {}),
-            flags: sanitizedCore ? [...new Set([...flags, ...sanitizedCore.flags])] : (analysisResult ? flags : [...flags, "CORE_ANALYSIS_MISSING"])
+            ...(sessionFindingsForExport ? { flags: buildFlagsFromFindings(sessionFindingsForExport) } : {})
         };
     };
 
@@ -499,20 +580,82 @@ const Audit = () => {
                     </CardContent>
                 </Card>
 
-                {/* FLAGS */}
-                {flags.length > 0 && (
+                {/* DIAGNOSTICS */}
+                <div className="space-y-6">
                     <div className="space-y-3">
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 px-1">Diagnostic Findings</h4>
-                        <div className="space-y-2">
-                            {flags.map((f, i) => (
-                                <div key={i} className="flex items-center space-x-3 p-4 bg-amber-500/5 text-amber-700 rounded-2xl ring-1 ring-amber-500/10">
-                                    <AlertCircle className="h-4 w-4 shrink-0 opacity-50" />
-                                    <span className="text-[11px] font-bold">{f}</span>
-                                </div>
-                            ))}
+                        <div className="flex items-center justify-between px-1">
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">Active Diagnostics (Live)</h4>
+                            <Badge variant="outline" className={`text-[9px] font-black uppercase tracking-widest ${diagnosticsSummary.status === 'OK' ? 'text-green-600 border-green-600/20 bg-green-500/5' : 'text-amber-600 border-amber-600/20 bg-amber-500/10'}`}>
+                                {diagnosticsSummary.status === 'OK' ? 'OK' : `Issues ${diagnosticsSummary.issuesCount}`}
+                            </Badge>
                         </div>
+                        {activeDiagnostics.length > 0 ? (
+                            <div className="space-y-2">
+                                {activeDiagnostics.map((issue, i) => {
+                                    const icon = issue.severity === 'error'
+                                        ? <AlertCircle className="h-4 w-4 shrink-0 opacity-70 text-red-600" />
+                                        : issue.severity === 'warn'
+                                            ? <AlertTriangle className="h-4 w-4 shrink-0 opacity-70 text-amber-600" />
+                                            : <Info className="h-4 w-4 shrink-0 opacity-70 text-blue-600" />;
+                                    const tone = issue.severity === 'error'
+                                        ? 'bg-red-500/5 text-red-700 ring-1 ring-red-500/10'
+                                        : issue.severity === 'warn'
+                                            ? 'bg-amber-500/5 text-amber-700 ring-1 ring-amber-500/10'
+                                            : 'bg-blue-500/5 text-blue-700 ring-1 ring-blue-500/10';
+                                    return (
+                                        <div key={`${issue.kind}-${i}`} className={`flex items-center space-x-3 p-4 rounded-2xl ${tone}`}>
+                                            {icon}
+                                            <div className="flex-1">
+                                                <div className="text-[11px] font-bold">{issue.title}</div>
+                                                <div className="text-[9px] font-bold uppercase tracking-widest opacity-50">{issue.kind.replace(/_/g, ' ')}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <p className="text-center py-4 text-[11px] font-medium text-muted-foreground/40">No active issues detected</p>
+                        )}
                     </div>
-                )}
+
+                    <div className="space-y-3">
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 px-1">This Recording - Findings</h4>
+                        {sessionFindings.length > 0 ? (
+                            <div className="space-y-2">
+                                {sessionFindings.map((finding, i) => (
+                                    <div key={`${finding.kind}-${i}`} className="flex items-center space-x-3 p-4 bg-muted/20 rounded-2xl ring-1 ring-border/20">
+                                        <Clock className="h-4 w-4 shrink-0 opacity-50" />
+                                        <div className="flex-1 space-y-1">
+                                            <div className="text-[11px] font-bold">{finding.kind.replace(/_/g, ' ')}</div>
+                                            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">{formatFindingWindow(finding)}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-center py-4 text-[11px] font-medium text-muted-foreground/40">No findings recorded yet</p>
+                        )}
+                    </div>
+
+                    <div className="space-y-3">
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 px-1">Manual Marks</h4>
+                        {manualEvents.length > 0 ? (
+                            <div className="space-y-2">
+                                {manualEvents.map((event, i) => (
+                                    <div key={`${event.kind}-${i}`} className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl ring-1 ring-primary/10">
+                                        <Clock className="h-4 w-4 shrink-0 opacity-60 text-primary" />
+                                        <div className="flex-1">
+                                            <div className="text-[11px] font-bold">Manual mark</div>
+                                            <div className="text-[9px] font-bold uppercase tracking-widest text-primary/60">{formatSeconds(event.tSec)}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-center py-4 text-[11px] font-medium text-muted-foreground/40">No manual marks yet</p>
+                        )}
+                    </div>
+                </div>
 
                 {/* EXPORT */}
                 <div className="pt-8 border-t border-border/10 grid grid-cols-2 gap-4">

@@ -1,4 +1,5 @@
 import { UnifiedSampleV2, CollectionHealth, CapabilitiesReport } from '../sensors/sensorTypes';
+import type { DiagnosticEvent } from '../diagnostics/diagnostics';
 import { RideMetadata } from '../lib/metadata';
 
 export interface AccelerometerData {
@@ -55,6 +56,7 @@ export interface RideSession {
   endTime: number | null;
   dataPoints: RideDataPoint[];
   gpsUpdates?: GpsUpdate[];
+  sessionFindings?: DiagnosticEvent[];
   smoothnessScore?: number;
   distance?: number;
   duration?: number;
