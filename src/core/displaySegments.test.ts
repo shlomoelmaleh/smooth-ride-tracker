@@ -56,7 +56,7 @@ describe('buildDisplaySegments', () => {
         const coreSegments: SegmentSummaryV1[] = [
             buildSegment(0, 40, 'STATIC', 0.95),
             buildSegment(40, 50, 'UNKNOWN', 0),
-            buildSegment(50, 80, 'WALKING', 0.85)
+            buildSegment(50, 80, 'MOVING', 0.85)
         ];
 
         const display = buildDisplaySegments(coreSegments);

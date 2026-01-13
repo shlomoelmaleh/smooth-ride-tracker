@@ -65,7 +65,9 @@ export interface CoreMetricsV1 {
     gyroP95?: number;
 }
 
-export type MotionState = 'STATIC' | 'WALKING' | 'VEHICLE' | 'UNKNOWN';
+export type MotionState = 'STATIC' | 'MOVING' | 'UNKNOWN';
+
+export type CoreStateV1 = 'STATIC' | 'MOVING' | 'SLOW_MOVING' | 'EVENT' | 'UNKNOWN';
 
 export interface MotionClassificationV1 {
     state: MotionState;
@@ -80,7 +82,7 @@ export interface MotionClassificationV1 {
         scores: {
             static: number;
             walking: number;
-            vehicle: number;
+            moving: number;
         };
         thresholds: {
             static: {
@@ -93,7 +95,7 @@ export interface MotionClassificationV1 {
                 jerkRms: { badMin: number; goodMin: number };
                 gyroRms: { badMin: number; goodMin: number };
             };
-            vehicle: {
+            moving: {
                 accelRms: { lowBad: number; lowGood: number; highGood: number; highBad: number };
                 jerkRms: { lowBad: number; lowGood: number; highGood: number; highBad: number };
                 gyroRms: { lowBad: number; lowGood: number; highGood: number; highBad: number };
@@ -126,6 +128,18 @@ export interface ImpactEventV1 {
     energyIndex: number;
     gpsContext?: {
         accuracy: number;
+        speed: number | null;
+    };
+}
+
+export interface WindowEventV1 {
+    tStartSec: number;
+    tPeakSec: number;
+    tEndSec: number;
+    peakAcc: number;
+    energyIndex: number;
+    gpsContext?: {
+        accuracy: number | null;
         speed: number | null;
     };
 }
@@ -169,15 +183,32 @@ export interface WindowSummaryV1 {
         accuracyP95M: number | null;
         speedMedian: number | null;
     };
-    motionClassification: Pick<MotionClassificationV1, 'state' | 'confidence' | 'signals'>;
+    classification: {
+        state: CoreStateV1;
+        confidence: number;
+        reason: string;
+        signals: {
+            accelRms: number;
+            jerkRms: number;
+            gyroRms?: number;
+            gpsSpeedMedian?: number | null;
+            gpsHz?: number;
+            gpsAccuracyP95M?: number | null;
+        };
+        debug?: {
+            walkingVeto: boolean;
+            gpsUsable: boolean;
+        };
+    };
     inVehicle: InVehicleDetectionV1;
+    event?: WindowEventV1 | null;
     flags: WindowFlag[];
 }
 
 export interface SegmentSummaryV1 {
     tStartSec: number;
     tEndSec: number;
-    state: 'STATIC' | 'WALKING' | 'IN_VEHICLE' | 'UNKNOWN';
+    state: CoreStateV1;
     confidence: number;
     reason: string;
 }
@@ -200,6 +231,7 @@ export interface WindowingResultV1 {
     windows: WindowSummaryV1[];
     segments: SegmentSummaryV1[];
     displaySegments: DisplaySegmentSummaryV1[];
+    events: WindowEventV1[];
 }
 
 export interface CoreEngine {

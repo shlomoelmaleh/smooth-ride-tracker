@@ -78,7 +78,7 @@ describe('buildCoreWindowing', () => {
             { schema: 1, timestamp: 9001, accG: { x: 0, y: 0, z: 9.8 } }
         ];
 
-        const result = buildCoreWindowing(frames);
+        const result = buildCoreWindowing(frames, 10000, 10000);
         expect(result.windows[0]?.flags).toContain('GPS_LOW_RATE');
     });
 });

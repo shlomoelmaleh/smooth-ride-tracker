@@ -228,6 +228,8 @@ const Audit = () => {
                 peakAcc: ev.peakAcc,
                 energyIndex: ev.energyIndex
             })),
+            windowEventsCount: windowing?.events.length || 0,
+            topWindowEvents: windowing?.events.slice(0, 5) || [],
             windowsCount: windowing?.windows.length || 0,
             segmentsCount: windowing?.segments.length || 0,
             topSegments: windowing ? pickTopSegments(windowing.segments, 5) : []
@@ -259,6 +261,7 @@ const Audit = () => {
             coreSummary: buildCoreSummary(analysisResult, coreWindowing),
             coreAnalysisWindows,
             coreSegments: coreWindowing?.segments,
+            coreEvents: coreWindowing?.events,
             flags: sanitizedCore ? [...new Set([...flags, ...sanitizedCore.flags])] : (analysisResult ? flags : [...flags, "CORE_ANALYSIS_MISSING"])
         };
     };
