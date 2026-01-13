@@ -45,10 +45,12 @@ const Audit = () => {
     const [analysisResult, setAnalysisResult] = useState<AnalyzeResultV1 | null>(null);
     const [coreWindowing, setCoreWindowing] = useState<WindowingResultV1 | null>(null);
     const [flags, setFlags] = useState<string[]>([]);
+    const [manualEvents, setManualEvents] = useState<{ tSec: number; kind: "tap"; note?: string }[]>([]);
 
     const collectorRef = useRef<{ stop: () => void } | null>(null);
     const engineRef = useRef(createEngine());
     const auditFramesRef = useRef<CoreFrameV1[]>([]);
+    const recordingStartMsRef = useRef<number | null>(null);
 
     // Toggle to omit per-window summaries from exported Audit JSON.
     const includeWindowSummaries = true;
@@ -80,9 +82,11 @@ const Audit = () => {
         setCoreWindowing(null);
         engineRef.current.reset();
         auditFramesRef.current = [];
+        setManualEvents([]);
 
         const duration = selectedDuration;
         const startAt = Date.now();
+        recordingStartMsRef.current = startAt;
 
         const collector = startCollectors({
             onSample: (sample) => {
@@ -152,6 +156,17 @@ const Audit = () => {
             }
         });
         collectorRef.current = collector;
+    };
+
+    const handleManualEvent = () => {
+        if (!isTesting || recordingStartMsRef.current === null) return;
+        const now = Date.now();
+        const tSec = Math.round(((now - recordingStartMsRef.current) / 1000) * 10) / 10;
+        setManualEvents((prev) => [...prev, { tSec, kind: "tap" }]);
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate(10);
+        }
+        toast.success('Event marked');
     };
 
     const toggleLiveSampling = () => {
@@ -246,6 +261,7 @@ const Audit = () => {
                 windows: coreWindowing.windows
             }
             : undefined;
+        const manualEventsForExport = manualEvents.length > 0 ? manualEvents : undefined;
         return {
             generatedAt: new Date().toISOString(),
             app: { name: "SmartRide", version: pkg.version, schema: 2 },
@@ -262,6 +278,7 @@ const Audit = () => {
             coreAnalysisWindows,
             coreSegments: coreWindowing?.segments,
             coreEvents: coreWindowing?.events,
+            ...(manualEventsForExport ? { manualEvents: manualEventsForExport } : {}),
             flags: sanitizedCore ? [...new Set([...flags, ...sanitizedCore.flags])] : (analysisResult ? flags : [...flags, "CORE_ANALYSIS_MISSING"])
         };
     };
@@ -390,6 +407,28 @@ const Audit = () => {
                             </div>
                         ) : isTesting ? (
                             <div className="space-y-4 py-4">
+                                <div className="flex items-center justify-between">
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={handleManualEvent}
+                                        className="h-7 px-3 rounded-full text-[10px] font-black uppercase tracking-widest"
+                                    >
+                                        Mark Event
+                                    </Button>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">
+                                        Events: {manualEvents.length}
+                                    </span>
+                                </div>
+                                {manualEvents.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 text-[9px] font-bold text-muted-foreground/50">
+                                        {manualEvents.slice(-3).map((ev, i) => (
+                                            <span key={`${ev.tSec}-${i}`} className="px-2 py-0.5 rounded-full bg-muted/30">
+                                                {ev.tSec.toFixed(1)}s
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                                 <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-primary/60 px-1">
                                     <span className="flex items-center"><Activity className="mr-2 h-3 w-3 animate-pulse" /> Profiling...</span>
                                     <span>{elapsedTime}s / {selectedDuration / 1000}s</span>
