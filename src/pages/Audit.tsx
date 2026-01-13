@@ -407,28 +407,19 @@ const Audit = () => {
                             </div>
                         ) : isTesting ? (
                             <div className="space-y-4 py-4">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                     <Button
-                                        variant="secondary"
+                                        variant="outline"
                                         size="sm"
                                         onClick={handleManualEvent}
-                                        className="h-7 px-3 rounded-full text-[10px] font-black uppercase tracking-widest"
+                                        className="h-10 px-4 w-full sm:w-auto rounded-xl text-[11px] font-black uppercase tracking-widest border-2 border-primary/50 text-primary bg-background/80 hover:bg-primary/5 shadow-sm"
                                     >
                                         Mark Event
                                     </Button>
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-primary/60 text-center sm:text-left">
                                         Events: {manualEvents.length}
                                     </span>
                                 </div>
-                                {manualEvents.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 text-[9px] font-bold text-muted-foreground/50">
-                                        {manualEvents.slice(-3).map((ev, i) => (
-                                            <span key={`${ev.tSec}-${i}`} className="px-2 py-0.5 rounded-full bg-muted/30">
-                                                {ev.tSec.toFixed(1)}s
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
                                 <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-primary/60 px-1">
                                     <span className="flex items-center"><Activity className="mr-2 h-3 w-3 animate-pulse" /> Profiling...</span>
                                     <span>{elapsedTime}s / {selectedDuration / 1000}s</span>
