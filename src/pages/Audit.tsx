@@ -38,6 +38,8 @@ type ManualEvent = {
     rideProfile: RideProfile;
 };
 
+const FREE_PLAY_DURATION_MS = -1;
+
 const Audit = () => {
     const [permissions, setPermissions] = useState<{ motion: string, location: string }>({
         motion: 'prompt',
@@ -74,9 +76,12 @@ const Audit = () => {
     const manualEventHandledRef = useRef(false);
     const diagnosticsPrevRef = useRef<string>('');
     const findingsCountRef = useRef(0);
+    const lastHealthRef = useRef<CollectionHealth | null>(null);
 
     // Toggle to omit per-window summaries from exported Audit JSON.
     const includeWindowSummaries = true;
+    const isFreePlay = selectedDuration === FREE_PLAY_DURATION_MS;
+    const durationLabel = isFreePlay ? 'Free play' : `${selectedDuration / 1000}s`;
 
     useEffect(() => {
         const checkInitial = async () => {
@@ -130,6 +135,50 @@ const Audit = () => {
         console.info('Audit: profile selected', { profile });
     };
 
+    const stopAuditRun = (health: CollectionHealth | null, stoppedAtMs: number) => {
+        const startedAt = recordingStartMsRef.current;
+        collectorRef.current?.stop();
+        setIsTesting(false);
+        setTestResults(health ?? lastHealthRef.current);
+        baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+        baselineTimersRef.current = [];
+        const finalSnapshot = diagnosticsRef.current.stopSession(stoppedAtMs);
+        setSessionFindings(finalSnapshot.sessionFindings);
+        setDiagnosticsSummary(finalSnapshot.summary);
+        setProfileLocked(false);
+        console.info('Audit: recording stopped', { elapsedMs: startedAt ? stoppedAtMs - startedAt : 0, profile: sessionProfile });
+        setRecordingStartMs(null);
+        recordingStartMsRef.current = null;
+
+        // Finalize Analysis
+        if (capabilities) {
+            engineRef.current.setCapabilities({
+                deviceMotion: capabilities.deviceMotion,
+                gps: capabilities.gps
+            });
+        }
+        const analysis = engineRef.current.finalize();
+        setAnalysisResult(analysis);
+
+        const analysisSnapshot = JSON.stringify(analysis);
+        const manualEventsForWindowing = manualEventsRef.current.map((event) => ({
+            tSec: Math.round((event.tMs / 1000) * 10) / 10,
+            kind: 'tap' as const
+        }));
+        const windowingResult = buildCoreWindowing(
+            auditFramesRef.current,
+            undefined,
+            undefined,
+            manualEventsForWindowing
+        );
+        setCoreWindowing(windowingResult);
+        const analysisSnapshotAfter = JSON.stringify(analysis);
+
+        if (analysisSnapshotAfter !== analysisSnapshot) {
+            console.warn('Audit: Windowing mutated analysis output');
+        }
+    };
+
     const runAuditTest = () => {
         if (!selectedProfile) {
             toast.error('Select a ride profile before recording');
@@ -149,8 +198,9 @@ const Audit = () => {
         auditFramesRef.current = [];
         setManualEvents([]);
         manualEventsRef.current = [];
-        console.info('Audit: recording started', { profile: selectedProfile, durationMs: selectedDuration });
-        const duration = selectedDuration;
+        lastHealthRef.current = null;
+        console.info('Audit: recording started', { profile: selectedProfile, durationMs: isFreePlay ? 'free' : selectedDuration });
+        const duration = isFreePlay ? null : selectedDuration;
         const startAt = Date.now();
         const diagnosticsSnapshot = diagnosticsRef.current.startSession(startAt);
         setActiveDiagnostics(diagnosticsSnapshot.activeIssues);
@@ -200,57 +250,29 @@ const Audit = () => {
                 const now = Date.now();
                 const elapsed = now - startAt;
                 setElapsedTime(Math.floor(elapsed / 1000));
-                setTestProgress(Math.min(100, (elapsed / duration) * 100));
+                lastHealthRef.current = health;
+                if (duration) {
+                    setTestProgress(Math.min(100, (elapsed / duration) * 100));
+                } else {
+                    setTestProgress(0);
+                }
                 const diagnosticsSnapshot = diagnosticsRef.current.updateHealth(health, now);
                 setActiveDiagnostics(diagnosticsSnapshot.activeIssues);
                 setSessionFindings(diagnosticsSnapshot.sessionFindings);
                 setDiagnosticsSummary(diagnosticsSnapshot.summary);
 
-                if (elapsed >= duration) {
-                    collector.stop();
-                    setIsTesting(false);
-                    setTestResults(health);
-                    baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-                    baselineTimersRef.current = [];
-                    const finalSnapshot = diagnosticsRef.current.stopSession(now);
-                    setSessionFindings(finalSnapshot.sessionFindings);
-                    setDiagnosticsSummary(finalSnapshot.summary);
-                    setProfileLocked(false);
-                    setRecordingStartMs(null);
-                    recordingStartMsRef.current = null;
-                    console.info('Audit: recording stopped', { elapsedMs: elapsed, profile: selectedProfile });
-
-                    // Finalize Analysis
-                    if (capabilities) {
-                        engineRef.current.setCapabilities({
-                            deviceMotion: capabilities.deviceMotion,
-                            gps: capabilities.gps
-                        });
-                    }
-                    const analysis = engineRef.current.finalize();
-                    setAnalysisResult(analysis);
-
-                    const analysisSnapshot = JSON.stringify(analysis);
-                    const manualEventsForWindowing = manualEventsRef.current.map((event) => ({
-                        tSec: Math.round((event.tMs / 1000) * 10) / 10,
-                        kind: 'tap' as const
-                    }));
-                    const windowingResult = buildCoreWindowing(
-                        auditFramesRef.current,
-                        undefined,
-                        undefined,
-                        manualEventsForWindowing
-                    );
-                    setCoreWindowing(windowingResult);
-                    const analysisSnapshotAfter = JSON.stringify(analysis);
-
-                    if (analysisSnapshotAfter !== analysisSnapshot) {
-                        console.warn('Audit: Windowing mutated analysis output');
-                    }
+                if (duration && elapsed >= duration) {
+                    stopAuditRun(health, now);
                 }
             }
         });
         collectorRef.current = collector;
+    };
+
+    const handleStopRun = () => {
+        if (!isTesting) return;
+        const now = Date.now();
+        stopAuditRun(lastHealthRef.current, now);
     };
 
     const handleManualEvent = (type: ManualEventType) => {
@@ -429,6 +451,11 @@ const Audit = () => {
 
     const generateReport = () => {
         const sanitizedCore = sanitizeCoreAnalysisForExport(analysisResult);
+        const durationSec = analysisResult?.durationMs
+            ? analysisResult.durationMs / 1000
+            : isFreePlay
+                ? elapsedTime
+                : selectedDuration / 1000;
         const coreAnalysisWindows = includeWindowSummaries && coreWindowing
             ? {
                 windowSizeMs: coreWindowing.windowSizeMs,
@@ -449,7 +476,7 @@ const Audit = () => {
             permissions,
             capabilities,
             ...(auditMetadata ? { auditMetadata } : {}),
-            testDurationSec: selectedDuration / 1000,
+            testDurationSec: durationSec,
             observed: testResults || liveHealth,
             coreAnalysis: sanitizedCore,
             coreSummary: buildCoreSummary(analysisResult, coreWindowing),
@@ -596,13 +623,19 @@ const Audit = () => {
                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/40">Audit Test</h3>
                         {!isTesting && !testResults && (
                             <div className="flex bg-muted/30 p-0.5 rounded-full ring-1 ring-border/20">
-                                {[10000, 30000, 60000, 300000].map((d) => (
+                                {[
+                                    { value: 10000, label: '10s' },
+                                    { value: 30000, label: '30s' },
+                                    { value: 60000, label: '60s' },
+                                    { value: 300000, label: '300s' },
+                                    { value: FREE_PLAY_DURATION_MS, label: 'Free' }
+                                ].map((option) => (
                                     <button
-                                        key={d}
-                                        onClick={() => setSelectedDuration(d)}
-                                        className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter transition-all ${selectedDuration === d ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
+                                        key={option.value}
+                                        onClick={() => setSelectedDuration(option.value)}
+                                        className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter transition-all ${selectedDuration === option.value ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
                                     >
-                                        {d / 1000}s
+                                        {option.label}
                                     </button>
                                 ))}
                             </div>
@@ -619,7 +652,7 @@ const Audit = () => {
                                     disabled={isLive || !selectedProfile}
                                     className="rounded-full px-10 h-14 font-black uppercase tracking-widest shadow-xl shadow-primary/20"
                                 >
-                                    Run Audit ({selectedDuration / 1000}s)
+                                    Run Audit ({durationLabel})
                                 </Button>
                             </div>
                         ) : isTesting ? (
@@ -660,9 +693,19 @@ const Audit = () => {
                                 </div>
                                 <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-primary/60 px-1">
                                     <span className="flex items-center"><Activity className="mr-2 h-3 w-3 animate-pulse" /> Profiling...</span>
-                                    <span>{elapsedTime}s / {selectedDuration / 1000}s</span>
+                                    <span>{elapsedTime}s / {durationLabel}</span>
                                 </div>
-                                <Progress value={testProgress} className="h-1.5 bg-primary/10" />
+                                {!isFreePlay && <Progress value={testProgress} className="h-1.5 bg-primary/10" />}
+                                {isFreePlay && (
+                                    <Button
+                                        onClick={handleStopRun}
+                                        variant="destructive"
+                                        className="w-full h-12 rounded-2xl text-[10px] font-black uppercase tracking-widest"
+                                    >
+                                        <Square className="mr-2 h-3 w-3 fill-current" />
+                                        Stop run
+                                    </Button>
+                                )}
                             </div>
                         ) : (
                             <div className="space-y-6 scale-in-sm duration-300">
