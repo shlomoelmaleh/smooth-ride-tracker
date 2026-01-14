@@ -28,7 +28,15 @@ import { AnalyzeResultV1, CoreFrameV1, SegmentSummaryV1, WindowingResultV1 } fro
 import { createDiagnosticsManager, DiagnosticEvent, DiagnosticIssue, DiagnosticsSummary } from '@/diagnostics/diagnostics';
 
 type RideProfile = 'private_car' | 'bus';
-type ManualEvent = { tSec: number; kind: 'tap'; tMs: number };
+type ManualEventType = 'hazard' | 'stop' | 'hard_brake';
+type ManualEvent = {
+    id: string;
+    type: ManualEventType;
+    source: 'manual';
+    tMs: number;
+    wallTimeIso: string;
+    rideProfile: RideProfile;
+};
 
 const Audit = () => {
     const [permissions, setPermissions] = useState<{ motion: string, location: string }>({
@@ -48,6 +56,7 @@ const Audit = () => {
     const [analysisResult, setAnalysisResult] = useState<AnalyzeResultV1 | null>(null);
     const [coreWindowing, setCoreWindowing] = useState<WindowingResultV1 | null>(null);
     const [manualEvents, setManualEvents] = useState<ManualEvent[]>([]);
+    const [recordingStartMs, setRecordingStartMs] = useState<number | null>(null);
     const [activeDiagnostics, setActiveDiagnostics] = useState<DiagnosticIssue[]>([]);
     const [sessionFindings, setSessionFindings] = useState<DiagnosticEvent[]>([]);
     const [diagnosticsSummary, setDiagnosticsSummary] = useState<DiagnosticsSummary>({ status: 'OK', issuesCount: 0 });
@@ -62,6 +71,7 @@ const Audit = () => {
     const recordingStartMsRef = useRef<number | null>(null);
     const baselineTimersRef = useRef<number[]>([]);
     const manualEventsRef = useRef<ManualEvent[]>([]);
+    const manualEventHandledRef = useRef(false);
     const diagnosticsPrevRef = useRef<string>('');
     const findingsCountRef = useRef(0);
 
@@ -147,6 +157,7 @@ const Audit = () => {
         setSessionFindings(diagnosticsSnapshot.sessionFindings);
         setDiagnosticsSummary(diagnosticsSnapshot.summary);
         recordingStartMsRef.current = startAt;
+        setRecordingStartMs(startAt);
         baselineTimersRef.current.forEach((timer) => window.clearTimeout(timer));
         baselineTimersRef.current = [
             window.setTimeout(() => {
@@ -205,6 +216,8 @@ const Audit = () => {
                     setSessionFindings(finalSnapshot.sessionFindings);
                     setDiagnosticsSummary(finalSnapshot.summary);
                     setProfileLocked(false);
+                    setRecordingStartMs(null);
+                    recordingStartMsRef.current = null;
                     console.info('Audit: recording stopped', { elapsedMs: elapsed, profile: selectedProfile });
 
                     // Finalize Analysis
@@ -218,7 +231,16 @@ const Audit = () => {
                     setAnalysisResult(analysis);
 
                     const analysisSnapshot = JSON.stringify(analysis);
-                    const windowingResult = buildCoreWindowing(auditFramesRef.current, undefined, undefined, manualEventsRef.current);
+                    const manualEventsForWindowing = manualEventsRef.current.map((event) => ({
+                        tSec: Math.round((event.tMs / 1000) * 10) / 10,
+                        kind: 'tap' as const
+                    }));
+                    const windowingResult = buildCoreWindowing(
+                        auditFramesRef.current,
+                        undefined,
+                        undefined,
+                        manualEventsForWindowing
+                    );
                     setCoreWindowing(windowingResult);
                     const analysisSnapshotAfter = JSON.stringify(analysis);
 
@@ -231,18 +253,38 @@ const Audit = () => {
         collectorRef.current = collector;
     };
 
-    const handleManualEvent = () => {
-        if (!isTesting || recordingStartMsRef.current === null) return;
+    const handleManualEvent = (type: ManualEventType) => {
+        if (!isTesting || recordingStartMsRef.current === null || recordingStartMs === null || !sessionProfile) return;
         const now = Date.now();
-        const tSec = Math.round(((now - recordingStartMsRef.current) / 1000) * 10) / 10;
-        const nextEvent: ManualEvent = { tSec, kind: 'tap', tMs: now };
+        const tMs = now - recordingStartMsRef.current;
+        const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `${now}-${Math.random().toString(36).slice(2, 10)}`;
+        const nextEvent: ManualEvent = {
+            id,
+            type,
+            source: 'manual',
+            tMs,
+            wallTimeIso: new Date(now).toISOString(),
+            rideProfile: sessionProfile
+        };
         setManualEvents((prev) => [...prev, nextEvent]);
         manualEventsRef.current = [...manualEventsRef.current, nextEvent];
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
             navigator.vibrate(10);
         }
-        toast.success('Event marked');
-        console.info('Audit: manual event', { tSec, kind: 'tap' });
+        const toastLabel = type === 'hard_brake' ? 'HARD_BRAKE' : type.toUpperCase();
+        toast.success(`Saved: ${toastLabel}`);
+        console.info('Audit: manual event', { type, tMs });
+    };
+
+    const handleManualEventRelease = (type: ManualEventType) => {
+        if (manualEventHandledRef.current) return;
+        manualEventHandledRef.current = true;
+        handleManualEvent(type);
+        window.setTimeout(() => {
+            manualEventHandledRef.current = false;
+        }, 0);
     };
 
     const toggleLiveSampling = () => {
@@ -346,7 +388,8 @@ const Audit = () => {
             windowsCount: windowing?.windows.length || 0,
             segmentsCount: windowing?.segments.length || 0,
             topSegments: windowing ? pickTopSegments(windowing.segments, 5) : [],
-            manualEventsCount: manualEvents.length
+            manualEventsCount: manualEvents.length,
+            manualEvents
         };
     };
 
@@ -394,9 +437,6 @@ const Audit = () => {
                 windows: coreWindowing.windows
             }
             : undefined;
-        const manualEventsForExport = manualEvents.length > 0
-            ? manualEvents.map(({ tSec, kind }) => ({ tSec, kind }))
-            : undefined;
         const sessionFindingsForExport = sessionFindings.length > 0 ? sessionFindings : undefined;
         const auditMetadata = sessionProfile ? { rideProfile: sessionProfile, profileLocked: true } : undefined;
         return {
@@ -417,7 +457,6 @@ const Audit = () => {
             coreSegments: coreWindowing?.segments,
             coreWindowingEvents: coreWindowing?.events,
             ...(sessionFindingsForExport ? { sessionFindings: sessionFindingsForExport } : {}),
-            ...(manualEventsForExport ? { manualEvents: manualEventsForExport } : {}),
             ...(sessionFindingsForExport ? { flags: buildFlagsFromFindings(sessionFindingsForExport) } : {})
         };
     };
@@ -585,18 +624,39 @@ const Audit = () => {
                             </div>
                         ) : isTesting ? (
                             <div className="space-y-4 py-4">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={handleManualEvent}
-                                        className="h-10 px-4 w-full sm:w-auto rounded-xl text-[11px] font-black uppercase tracking-widest border-2 border-primary/50 text-primary bg-background/80 hover:bg-primary/5 shadow-sm"
-                                    >
-                                        Mark Event
-                                    </Button>
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-primary/60 text-center sm:text-left">
-                                        Events: {manualEvents.length}
-                                    </span>
+                                <div className="space-y-2">
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-primary/60 text-center sm:text-left">
+                                        Manual Events
+                                    </div>
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onPointerUp={() => handleManualEventRelease('hazard')}
+                                            onTouchEnd={() => handleManualEventRelease('hazard')}
+                                            className="h-10 px-4 w-full rounded-xl text-[11px] font-black uppercase tracking-widest border-2 border-primary/50 text-primary bg-background/80 hover:bg-primary/5 shadow-sm"
+                                        >
+                                            מפגע בדרך
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onPointerUp={() => handleManualEventRelease('stop')}
+                                            onTouchEnd={() => handleManualEventRelease('stop')}
+                                            className="h-10 px-4 w-full rounded-xl text-[11px] font-black uppercase tracking-widest border-2 border-primary/50 text-primary bg-background/80 hover:bg-primary/5 shadow-sm"
+                                        >
+                                            עצירה
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onPointerUp={() => handleManualEventRelease('hard_brake')}
+                                            onTouchEnd={() => handleManualEventRelease('hard_brake')}
+                                            className="h-10 px-4 w-full rounded-xl text-[11px] font-black uppercase tracking-widest border-2 border-primary/50 text-primary bg-background/80 hover:bg-primary/5 shadow-sm"
+                                        >
+                                            בלימה חזקה
+                                        </Button>
+                                    </div>
                                 </div>
                                 <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-primary/60 px-1">
                                     <span className="flex items-center"><Activity className="mr-2 h-3 w-3 animate-pulse" /> Profiling...</span>
@@ -734,24 +794,6 @@ const Audit = () => {
                         )}
                     </div>
 
-                    <div className="space-y-3">
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 px-1">Manual Marks</h4>
-                        {manualEvents.length > 0 ? (
-                            <div className="space-y-2">
-                                {manualEvents.map((event, i) => (
-                                    <div key={`${event.kind}-${i}`} className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl ring-1 ring-primary/10">
-                                        <Clock className="h-4 w-4 shrink-0 opacity-60 text-primary" />
-                                        <div className="flex-1">
-                                            <div className="text-[11px] font-bold">Manual mark</div>
-                                            <div className="text-[9px] font-bold uppercase tracking-widest text-primary/60">{formatSeconds(event.tSec)}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-center py-4 text-[11px] font-medium text-muted-foreground/40">No manual marks yet</p>
-                        )}
-                    </div>
                 </div>
 
                 {/* EXPORT */}
